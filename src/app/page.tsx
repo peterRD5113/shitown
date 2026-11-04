@@ -9,10 +9,8 @@ import {
   Pause,
   Download,
   QrCode,
-  KeyRound,
   Volume2,
   ExternalLink,
-  Check,
   Monitor,
   Smartphone,
   ArrowRight,
@@ -24,7 +22,6 @@ import {
   downloadVinylSleeveCardPng,
 } from "@/lib/export-card-png";
 
-type EngineProvider = "offline" | "elevenlabs" | "fal";
 type ViewportMode = "desktop" | "mobile";
 
 interface RecommendedBgmTrack {
@@ -99,13 +96,6 @@ export default function ShiTownVoicePostcardPage() {
   // Strict Step-by-Step Progression (1 -> 2 -> 3 -> 4)
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
-  // Optional API Key Drawer
-  const [showKeyDrawer, setShowKeyDrawer] = useState(false);
-  const [provider, setProvider] = useState<EngineProvider>("offline");
-  const [geminiKey, setGeminiKey] = useState("");
-  const [elevenlabsKey, setElevenlabsKey] = useState("");
-  const [falKey, setFalKey] = useState("");
-
   // Step 01: Microphone Recording & Dry Voice Preview
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -157,17 +147,8 @@ export default function ShiTownVoicePostcardPage() {
       if (stepParam === 1 || stepParam === 2 || stepParam === 3 || stepParam === 4) {
         setCurrentStep(stepParam);
       }
-      const savedGemini =
-        localStorage.getItem("kissa_openrouter_key") ||
-        localStorage.getItem("kissa_gemini_key") ||
-        "";
-      const savedEleven = localStorage.getItem("kissa_elevenlabs_key") || "";
-      const savedFal = localStorage.getItem("kissa_fal_key") || "";
-      if (savedGemini) setGeminiKey(savedGemini);
-      if (savedEleven) setElevenlabsKey(savedEleven);
-      if (savedFal) setFalKey(savedFal);
     } catch {
-      // Ignore storage errors
+      // Ignore URL search param errors
     }
 
     let cancelled = false;
@@ -347,9 +328,6 @@ export default function ShiTownVoicePostcardPage() {
       try {
         const analysisForm = new FormData();
         analysisForm.append("audio", voiceBlob, "voice.wav");
-        if (geminiKey.trim()) {
-          analysisForm.append("openrouterApiKey", geminiKey.trim());
-        }
         const analysisRes = await fetch("/api/analyze-voice", {
           method: "POST",
           body: analysisForm,
@@ -371,23 +349,21 @@ export default function ShiTownVoicePostcardPage() {
         // Fallback to default 2 recommendations if analysis fails
       }
 
-      // Stage 2: Generate the 2 BGM tracks from the prompts
+      // Stage 2: Generate the 2 BGM tracks from the prompts via backend Fal.ai API
       const targetLen = Math.max(14, voiceDuration + 4);
       const newBuffers: Record<string, AudioBuffer> = {};
       const newBlobs: Record<string, Blob> = {};
 
       for (const rec of activeRecommendations) {
-        if (provider !== "offline" && (elevenlabsKey.trim() || falKey.trim())) {
+        try {
           const res = await fetch("/api/generate-bgm", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              provider,
+              provider: "fal",
               prompt: rec.prompt,
               mode: rec.mode,
               durationSeconds: targetLen,
-              elevenlabsApiKey: elevenlabsKey,
-              falApiKey: falKey,
               falModel: "fal-ai/stable-audio",
             }),
           });
@@ -398,6 +374,8 @@ export default function ShiTownVoicePostcardPage() {
             newBlobs[rec.id] = audioBufferToWavBlob(decoded);
             continue;
           }
+        } catch {
+          // Fallback to synthesizer below if cloud BGM call fails
         }
         const synthBuf = await synthesizeOfflineBackingBuffer(
           rec.presetId || "warm-guitar-piano",
@@ -499,18 +477,6 @@ export default function ShiTownVoicePostcardPage() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
-
-  const handleSaveApiKeys = () => {
-    try {
-      localStorage.setItem("kissa_openrouter_key", geminiKey.trim());
-      localStorage.setItem("kissa_gemini_key", geminiKey.trim());
-      localStorage.setItem("kissa_elevenlabs_key", elevenlabsKey.trim());
-      localStorage.setItem("kissa_fal_key", falKey.trim());
-      setShowKeyDrawer(false);
-    } catch {
-      setShowKeyDrawer(false);
-    }
   };
 
   const formatTime = (sec: number) => {
@@ -1094,184 +1060,8 @@ export default function ShiTownVoicePostcardPage() {
               <span>手機版 (390px)</span>
             </button>
           </div>
-
-          <button
-            type="button"
-            className="utility-key-btn"
-            onClick={() => setShowKeyDrawer((v) => !v)}
-            aria-expanded={showKeyDrawer}
-          >
-            <KeyRound size={14} strokeWidth={1.75} />
-            <span>API 金鑰</span>
-          </button>
         </div>
       </div>
-
-      {/* Collapsible API Key Bar (Kept temporarily) */}
-      {showKeyDrawer && (
-        <section
-          aria-label="API 金鑰暫存設定區"
-          style={{
-            maxWidth: "720px",
-            margin: "12px auto 0",
-            padding: "16px 20px",
-            backgroundColor: "#EFE7DA",
-            border: "1px solid #C4B097",
-            borderRadius: "8px",
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "12px",
-              alignItems: "end",
-            }}
-          >
-            <div>
-              <label
-                htmlFor="input-gemini"
-                style={{
-                  display: "block",
-                  fontSize: "0.78rem",
-                  fontWeight: 700,
-                  marginBottom: "4px",
-                }}
-              >
-                1. OpenRouter Key (Gemini 2.5 聽語調)
-              </label>
-              <input
-                id="input-gemini"
-                type="password"
-                value={geminiKey}
-                onChange={(e) => setGeminiKey(e.target.value)}
-                placeholder="sk-or-v1-..."
-                style={{
-                  width: "100%",
-                  padding: "8px 10px",
-                  borderRadius: "6px",
-                  border: "1px solid #C4B097",
-                  backgroundColor: "#FBF8F3",
-                  color: "#3A2314",
-                  fontSize: "0.84rem",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="select-provider"
-                style={{
-                  display: "block",
-                  fontSize: "0.78rem",
-                  fontWeight: 700,
-                  marginBottom: "4px",
-                }}
-              >
-                2. 配樂生成引擎
-              </label>
-              <select
-                id="select-provider"
-                value={provider}
-                onChange={(e) => setProvider(e.target.value as EngineProvider)}
-                style={{
-                  width: "100%",
-                  padding: "8px 10px",
-                  borderRadius: "6px",
-                  border: "1px solid #C4B097",
-                  backgroundColor: "#FBF8F3",
-                  color: "#3A2314",
-                  fontSize: "0.84rem",
-                }}
-              >
-                <option value="offline">內建離線音源 (免金鑰)</option>
-                <option value="elevenlabs">ElevenLabs API</option>
-                <option value="fal">Fal.ai API</option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="input-eleven"
-                style={{
-                  display: "block",
-                  fontSize: "0.78rem",
-                  fontWeight: 700,
-                  marginBottom: "4px",
-                }}
-              >
-                ElevenLabs Key
-              </label>
-              <input
-                id="input-eleven"
-                type="password"
-                value={elevenlabsKey}
-                onChange={(e) => setElevenlabsKey(e.target.value)}
-                placeholder="sk_..."
-                style={{
-                  width: "100%",
-                  padding: "8px 10px",
-                  borderRadius: "6px",
-                  border: "1px solid #C4B097",
-                  backgroundColor: "#FBF8F3",
-                  color: "#3A2314",
-                  fontSize: "0.84rem",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="input-fal"
-                style={{
-                  display: "block",
-                  fontSize: "0.78rem",
-                  fontWeight: 700,
-                  marginBottom: "4px",
-                }}
-              >
-                Fal.ai Key
-              </label>
-              <input
-                id="input-fal"
-                type="password"
-                value={falKey}
-                onChange={(e) => setFalKey(e.target.value)}
-                placeholder="key_id:secret"
-                style={{
-                  width: "100%",
-                  padding: "8px 10px",
-                  borderRadius: "6px",
-                  border: "1px solid #C4B097",
-                  backgroundColor: "#FBF8F3",
-                  color: "#3A2314",
-                  fontSize: "0.84rem",
-                }}
-              />
-            </div>
-
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button
-                type="button"
-                className="btn-primary"
-                style={{ padding: "8px 14px", fontSize: "0.82rem" }}
-                onClick={handleSaveApiKeys}
-              >
-                <Check size={14} strokeWidth={1.75} />
-                <span>儲存</span>
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                style={{ padding: "8px 14px", fontSize: "0.82rem" }}
-                onClick={() => setShowKeyDrawer(false)}
-              >
-                <span>收起</span>
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
 
       {viewportMode === "mobile" ? (
         <div className="mobile-preview-backdrop">
