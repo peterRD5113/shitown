@@ -15,5 +15,11 @@
       "binding": "WORKER_SELF_REFERENCE",
       "service": "shitown"
     }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "SHITOWN_KV",
+      "id": "1c35f371649941b2a4ba43ee364c89d2"
+    }
   ]
 }

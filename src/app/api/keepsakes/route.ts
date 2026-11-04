@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export interface KeepsakeRecord {
   id: string;
@@ -13,6 +14,16 @@ export interface KeepsakeRecord {
   audioUrl: string | null;
 }
 
+interface KvNamespaceLike {
+  get(key: string, type?: "text"): Promise<string | null>;
+  get<T = unknown>(key: string, type: "json"): Promise<T | null>;
+  get(key: string, type: "arrayBuffer"): Promise<ArrayBuffer | null>;
+  put(
+    key: string,
+    value: string | ArrayBuffer | ArrayBufferView | ReadableStream
+  ): Promise<void>;
+}
+
 const DEFAULT_SAMPLE_RECORD: KeepsakeRecord = {
   id: "shitown-001",
   recipientTitle: "港町留聲・私人聲音明信片",
@@ -22,7 +33,7 @@ const DEFAULT_SAMPLE_RECORD: KeepsakeRecord = {
   presetId: "warm-guitar-piano",
   presetTitle: "老屋午後暖陽與木吉他",
   durationSeconds: 14,
-  createdAt: "2026.11.04",
+  createdAt: "2026.11.05",
   audioUrl: null,
 };
 
@@ -31,6 +42,19 @@ declare global {
   var __SHITOWN_RECORDS__: Record<string, KeepsakeRecord> | undefined;
   // eslint-disable-next-line no-var
   var __SHITOWN_AUDIO__: Record<string, ArrayBuffer> | undefined;
+}
+
+async function getShitownKv(): Promise<KvNamespaceLike | null> {
+  try {
+    const ctx = await getCloudflareContext({ async: true });
+    const env = ctx?.env as Record<string, unknown> | undefined;
+    if (env && env.SHITOWN_KV) {
+      return env.SHITOWN_KV as KvNamespaceLike;
+    }
+  } catch {
+    // Not running inside Cloudflare runtime (e.g. local next dev)
+  }
+  return null;
 }
 
 function getMemoryRecords(): Record<string, KeepsakeRecord> {
@@ -57,7 +81,11 @@ async function readLocalDiskIndex(): Promise<Record<string, KeepsakeRecord>> {
     const indexFile = path.join(process.cwd(), "data", "keepsakes.json");
     const raw = await fs.readFile(indexFile, "utf-8");
     const parsed = JSON.parse(raw);
-    return { "kissa-042": DEFAULT_SAMPLE_RECORD, ...parsed };
+    return {
+      "shitown-001": DEFAULT_SAMPLE_RECORD,
+      "kissa-042": { ...DEFAULT_SAMPLE_RECORD, id: "kissa-042" },
+      ...parsed,
+    };
   } catch {
     return getMemoryRecords();
   }
@@ -67,12 +95,26 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
 
-  const diskIndex = await readLocalDiskIndex();
-  const memIndex = getMemoryRecords();
-  const merged = { ...diskIndex, ...memIndex };
-
   if (id) {
+    // 1. Check permanent Cloudflare KV first
+    const kv = await getShitownKv();
+    if (kv) {
+      try {
+        const kvRecord = await kv.get<KeepsakeRecord>(`record:${id}`, "json");
+        if (kvRecord) {
+          return NextResponse.json(kvRecord);
+        }
+      } catch {
+        // Fallback below
+      }
+    }
+
+    // 2. Fallback to memory / local disk
+    const diskIndex = await readLocalDiskIndex();
+    const memIndex = getMemoryRecords();
+    const merged = { ...diskIndex, ...memIndex };
     const item = merged[id];
+
     if (!item) {
       return NextResponse.json(
         { error: "找不到這張聲音明信片，可能尚未生成或連結有誤。" },
@@ -82,6 +124,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(item);
   }
 
+  const diskIndex = await readLocalDiskIndex();
+  const memIndex = getMemoryRecords();
+  const merged = { ...diskIndex, ...memIndex };
   return NextResponse.json(Object.values(merged));
 }
 
@@ -113,10 +158,17 @@ export async function POST(req: NextRequest) {
     const id = `shitown-${shortCode}`;
     let audioUrl: string | null = null;
 
+    const kv = await getShitownKv();
+
     if (audioFile) {
       const arrayBuffer = await audioFile.arrayBuffer();
       getMemoryAudio()[id] = arrayBuffer;
       audioUrl = `/api/keepsakes/audio?id=${encodeURIComponent(id)}`;
+
+      // Save permanently to Cloudflare KV when deployed on Cloudflare
+      if (kv) {
+        await kv.put(`audio:${id}`, arrayBuffer);
+      }
 
       // Also persist to local disk when running in Node.js dev/server
       try {
@@ -157,6 +209,11 @@ export async function POST(req: NextRequest) {
     };
 
     getMemoryRecords()[id] = record;
+
+    // Save record permanently to Cloudflare KV
+    if (kv) {
+      await kv.put(`record:${id}`, JSON.stringify(record));
+    }
 
     try {
       const fs = await import("fs/promises");
