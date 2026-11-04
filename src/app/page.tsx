@@ -96,12 +96,12 @@ export default function ShiTownVoicePostcardPage() {
   const [hasMixedAudio, setHasMixedAudio] = useState(false);
   const [hasGeneratedQr, setHasGeneratedQr] = useState(false);
 
-  // Step 01: Microphone Recording & Dry Voice Preview
+  // Step 01: Microphone Recording & Voice Preview
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [voiceBuffer, setVoiceBuffer] = useState<AudioBuffer | null>(null);
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
-  const [voiceDuration, setVoiceDuration] = useState<number>(10);
+  const [voiceDuration, setVoiceDuration] = useState<number>(0);
   const [hasRecordedCustomVoice, setHasRecordedCustomVoice] = useState(false);
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
 
@@ -140,14 +140,24 @@ export default function ShiTownVoicePostcardPage() {
   const activeAudioElRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
+    let stepParam = 1;
     try {
       const search = new URLSearchParams(window.location.search);
-      const stepParam = Number(search.get("step"));
-      if (stepParam === 1 || stepParam === 2 || stepParam === 3 || stepParam === 4) {
-        setOpenStep(stepParam);
-        if (stepParam >= 2) setHasSubmittedVoice(true);
-        if (stepParam >= 3) setHasMixedAudio(true);
-        if (stepParam >= 4) setHasGeneratedQr(true);
+      const parsedStep = Number(search.get("step"));
+      if (
+        parsedStep === 1 ||
+        parsedStep === 2 ||
+        parsedStep === 3 ||
+        parsedStep === 4
+      ) {
+        stepParam = parsedStep;
+        setOpenStep(parsedStep);
+        if (parsedStep >= 2) {
+          setHasRecordedCustomVoice(true);
+          setHasSubmittedVoice(true);
+        }
+        if (parsedStep >= 3) setHasMixedAudio(true);
+        if (parsedStep >= 4) setHasGeneratedQr(true);
       }
     } catch {
       // Ignore URL search param errors
@@ -155,7 +165,6 @@ export default function ShiTownVoicePostcardPage() {
 
     let cancelled = false;
     (async () => {
-      const demoVoice = await createDemoVoiceBuffer();
       const bufA = await synthesizeOfflineBackingBuffer(
         TWO_AI_BGM_RECOMMENDATIONS[0].presetId,
         14
@@ -166,10 +175,6 @@ export default function ShiTownVoicePostcardPage() {
       );
       if (cancelled) return;
 
-      setVoiceBuffer(demoVoice);
-      setVoiceBlob(audioBufferToWavBlob(demoVoice));
-      setVoiceDuration(Math.round(demoVoice.duration));
-
       setBgmBuffers({
         "bgm-a": bufA,
         "bgm-b": bufB,
@@ -179,16 +184,22 @@ export default function ShiTownVoicePostcardPage() {
         "bgm-b": audioBufferToWavBlob(bufB),
       });
 
-      const initialMix = await renderAutoDuckedMix(demoVoice, bufA, {
-        voiceGain: 1.0,
-        bgmGain: 0.34,
-        duckingDepthDb: 9,
-        introSeconds: 1.5,
-        outroSeconds: 2.5,
-      });
-      if (!cancelled) {
-        setMixedWavBlob(initialMix.wavBlob);
-        setMixedDuration(Math.round(initialMix.durationSeconds));
+      // Only pre-populate demo voice when explicitly previewing step >= 2 via URL param
+      if (stepParam >= 2) {
+        const demoVoice = await createDemoVoiceBuffer();
+        if (cancelled) return;
+        setVoiceBuffer(demoVoice);
+        setVoiceBlob(audioBufferToWavBlob(demoVoice));
+        setVoiceDuration(Math.round(demoVoice.duration));
+
+        const initialMix = await renderAutoDuckedMix(demoVoice, bufA, {
+          introSeconds: 1.5,
+          outroSeconds: 2.5,
+        });
+        if (!cancelled) {
+          setMixedWavBlob(initialMix.wavBlob);
+          setMixedDuration(Math.round(initialMix.durationSeconds));
+        }
       }
     })();
 
@@ -578,9 +589,7 @@ export default function ShiTownVoicePostcardPage() {
                   ? `錄音中 ${formatTime(recordingSeconds)}`
                   : hasRecordedCustomVoice
                   ? `已錄製 ${formatTime(voiceDuration)}`
-                  : hasSubmittedVoice
-                  ? `已完成 (${formatTime(voiceDuration)})`
-                  : `長度 ${formatTime(voiceDuration)}`}
+                  : "尚未錄音"}
               </span>
               <ChevronDown size={18} className="step-chevron" />
             </div>
@@ -589,7 +598,7 @@ export default function ShiTownVoicePostcardPage() {
           {openStep === 1 && (
             <div className="step-body">
               <p className="step-instruction">
-                請點擊「開始錄音」錄下您想說的話，錄完後可先試聽乾音，確認無誤後點選「確認送出」。
+                請點擊「開始錄音」錄下您想說的話，錄完後可先試聽，確認無誤後點選「確認送出」。
               </p>
 
               <div className="step-action-row">
@@ -601,7 +610,9 @@ export default function ShiTownVoicePostcardPage() {
                       onClick={handleStartRecording}
                     >
                       <Mic size={16} strokeWidth={1.75} />
-                      <span>開始錄音</span>
+                      <span>
+                        {hasRecordedCustomVoice ? "重新錄音" : "開始錄音"}
+                      </span>
                     </button>
                   ) : (
                     <button
@@ -610,11 +621,11 @@ export default function ShiTownVoicePostcardPage() {
                       onClick={handleStopRecording}
                     >
                       <Square size={16} strokeWidth={1.75} />
-                      <span>停止 ({formatTime(recordingSeconds)})</span>
+                      <span>停止錄音 ({formatTime(recordingSeconds)})</span>
                     </button>
                   )}
 
-                  {voiceBlob && (
+                  {hasRecordedCustomVoice && voiceBlob && !isRecording && (
                     <button
                       type="button"
                       className="btn-secondary"
@@ -636,7 +647,7 @@ export default function ShiTownVoicePostcardPage() {
                       ) : (
                         <>
                           <Play size={16} strokeWidth={1.75} />
-                          <span>試聽乾音</span>
+                          <span>試聽錄音</span>
                         </>
                       )}
                     </button>
@@ -647,7 +658,11 @@ export default function ShiTownVoicePostcardPage() {
                   type="button"
                   className="btn-primary"
                   onClick={handleConfirmStep1}
-                  disabled={isRecording || isGeneratingBgmOptions}
+                  disabled={
+                    !hasRecordedCustomVoice ||
+                    isRecording ||
+                    isGeneratingBgmOptions
+                  }
                 >
                   <span>
                     {isGeneratingBgmOptions

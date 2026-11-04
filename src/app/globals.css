@@ -514,10 +514,13 @@ textarea {
   }
 
   .step-action-left {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
     gap: 8px;
     width: 100%;
+  }
+
+  .step-action-left > .btn-secondary {
+    flex: 1;
   }
 
   .step-action-row > .btn-primary,
