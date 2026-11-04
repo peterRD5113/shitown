@@ -33,7 +33,7 @@ export async function downloadStandaloneQrPng(
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  // Warm Paper Background (#FBF8F3 matches logo background)
+  // Warm Paper Background (#FBF8F3)
   ctx.fillStyle = "#FBF8F3";
   ctx.fillRect(0, 0, width, height);
 
@@ -46,45 +46,49 @@ export async function downloadStandaloneQrPng(
   ctx.lineWidth = 1;
   ctx.strokeRect(44, 44, width - 88, height - 88);
 
-  // Draw Official Shi Town Logo
-  const logoImg = await loadImage("/shitown-logo.png");
+  // Draw Official Shi Town Logo (constrained by height so it never overlaps text or QR below)
+  const logoImg = await loadImage("/shitown-logo.png?v=3");
+  const logoTopY = 64;
+  const logoH = 156;
   if (logoImg) {
-    const logoW = 240;
-    const logoH = (logoImg.height / logoImg.width) * logoW;
-    ctx.drawImage(logoImg, (width - logoW) / 2, 64, logoW, logoH);
+    const logoW = (logoImg.width / logoImg.height) * logoH;
+    ctx.drawImage(logoImg, (width - logoW) / 2, logoTopY, logoW, logoH);
   }
 
+  // Title sits cleanly 46px below the bottom of the logo (64 + 156 + 46 = 266)
   ctx.fillStyle = "#523624";
   ctx.textAlign = "center";
-  ctx.font = '700 28px "Noto Serif TC", serif';
-  ctx.fillText("港町留聲計畫・專屬聲音條碼", width / 2, 268);
+  ctx.font = '700 26px "Noto Serif TC", serif';
+  ctx.fillText("港町留聲計畫・專屬聲音條碼", width / 2, 266);
 
-  // QR Code Image
+  // QR Code Image sits cleanly at y = 300 (frame) / y = 310 (QR)
   const qrDataUrl = await QRCode.toDataURL(listenUrl, {
     width: 440,
     margin: 2,
     color: {
       dark: "#3A2314",
-      light: "#FBF8F3",
+      light: "#FFFFFF",
     },
     errorCorrectionLevel: "H",
   });
 
   const qrImg = await loadImage(qrDataUrl);
   if (qrImg) {
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(170, 298, 460, 460);
     ctx.strokeStyle = "#D8C8B4";
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(170, 300, 460, 460);
-    ctx.drawImage(qrImg, 180, 310, 440, 440);
+    ctx.strokeRect(170, 298, 460, 460);
+    ctx.drawImage(qrImg, 180, 308, 440, 440);
   }
 
   ctx.fillStyle = "#3A2314";
   ctx.font = '600 20px "Noto Sans TC", sans-serif';
-  ctx.fillText("請以手機相機掃描條碼，聆聽這段珍藏聲音", width / 2, 814);
+  ctx.fillText("請以手機相機掃描條碼，聆聽這段珍藏聲音", width / 2, 812);
 
   ctx.fillStyle = "#7D6249";
   ctx.font = '500 15px "JetBrains Mono", monospace';
-  ctx.fillText(`SHI TOWN · #${keepsakeId.toUpperCase()}`, width / 2, 848);
+  ctx.fillText(`SHI TOWN · #${keepsakeId.toUpperCase()}`, width / 2, 846);
 
   triggerDownload(canvas, `shitown-qrcode-${keepsakeId}.png`);
 }
@@ -182,37 +186,46 @@ export async function downloadVinylSleeveCardPng(
   ctx.lineTo(780, 672);
   ctx.stroke();
 
-  // Right side: Official Logo + QR Code
-  const logoImg = await loadImage("/shitown-logo.png");
+  // Right side: Official Logo (top: 76, height: 148 -> bottom: 224) + QR Code (top: 252, size: 260 -> bottom: 512)
+  const logoImg = await loadImage("/shitown-logo.png?v=3");
+  const rightCenterX = 990;
+  const logoTopY = 76;
+  const logoH = 148;
   if (logoImg) {
-    const logoW = 200;
-    const logoH = (logoImg.height / logoImg.width) * logoW;
-    ctx.drawImage(logoImg, 990 - logoW / 2, 86, logoW, logoH);
+    const logoW = (logoImg.width / logoImg.height) * logoH;
+    ctx.drawImage(logoImg, rightCenterX - logoW / 2, logoTopY, logoW, logoH);
   }
 
+  const qrSize = 260;
+  const qrTopY = 252;
   const qrDataUrl = await QRCode.toDataURL(meta.listenUrl, {
-    width: 260,
-    margin: 1,
+    width: qrSize,
+    margin: 2,
     color: {
       dark: "#3A2314",
-      light: "#FBF8F3",
+      light: "#FFFFFF",
     },
     errorCorrectionLevel: "M",
   });
 
   const qrImg = await loadImage(qrDataUrl);
   if (qrImg) {
-    ctx.drawImage(qrImg, 990 - 130, 260, 260, 260);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(rightCenterX - qrSize / 2 - 8, qrTopY - 8, qrSize + 16, qrSize + 16);
+    ctx.strokeStyle = "#D8C8B4";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(rightCenterX - qrSize / 2 - 8, qrTopY - 8, qrSize + 16, qrSize + 16);
+    ctx.drawImage(qrImg, rightCenterX - qrSize / 2, qrTopY, qrSize, qrSize);
   }
 
   ctx.textAlign = "center";
   ctx.fillStyle = "#3A2314";
   ctx.font = '700 20px "Noto Sans TC", sans-serif';
-  ctx.fillText("手機掃碼・聆聽留聲", 990, 568);
+  ctx.fillText("手機掃碼・聆聽留聲", rightCenterX, 566);
 
   ctx.fillStyle = "#7D6249";
   ctx.font = '400 15px "Noto Sans TC", sans-serif';
-  ctx.fillText("開啟手機相機對準上方 QR Code 即可播放", 990, 600);
+  ctx.fillText("開啟手機相機對準上方 QR Code 即可播放", rightCenterX, 598);
 
   triggerDownload(canvas, `shitown-postcard-${meta.id}.png`);
 }
