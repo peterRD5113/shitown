@@ -12,6 +12,7 @@ import {
   Volume2,
   ExternalLink,
   ArrowRight,
+  ChevronDown,
 } from "lucide-react";
 import { synthesizeOfflineBackingBuffer } from "@/lib/presets";
 import { renderAutoDuckedMix, audioBufferToWavBlob } from "@/lib/audio-mixer";
@@ -87,8 +88,13 @@ async function createDemoVoiceBuffer(sampleRate = 44100): Promise<AudioBuffer> {
 }
 
 export default function ShiTownVoicePostcardPage() {
-  // Strict Step-by-Step Progression (1 -> 2 -> 3 -> 4)
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  // Currently open accordion panel (any step 1..4 can be freely opened at any time!)
+  const [openStep, setOpenStep] = useState<1 | 2 | 3 | 4 | null>(1);
+
+  // Non-destructive completion flags (opening an earlier step never wipes out completed later steps)
+  const [hasSubmittedVoice, setHasSubmittedVoice] = useState(false);
+  const [hasMixedAudio, setHasMixedAudio] = useState(false);
+  const [hasGeneratedQr, setHasGeneratedQr] = useState(false);
 
   // Step 01: Microphone Recording & Dry Voice Preview
   const [isRecording, setIsRecording] = useState(false);
@@ -109,6 +115,7 @@ export default function ShiTownVoicePostcardPage() {
   const [bgmBuffers, setBgmBuffers] = useState<Record<string, AudioBuffer>>({});
   const [bgmBlobs, setBgmBlobs] = useState<Record<string, Blob>>({});
   const [selectedBgmId, setSelectedBgmId] = useState<string>("bgm-a");
+  const [mixedBgmId, setMixedBgmId] = useState<string>("bgm-a");
   const [playingBgmId, setPlayingBgmId] = useState<string | null>(null);
 
   // Step 03: Auto-Mixed Voice Postcard Audio
@@ -120,7 +127,7 @@ export default function ShiTownVoicePostcardPage() {
   // Step 04: QR Code Generation & Download
   const [isGeneratingQr, setIsGeneratingQr] = useState(false);
   const [keepsakeId, setKeepsakeId] = useState<string>("shitown-001");
-  const [createdAtDate, setCreatedAtDate] = useState<string>("2026.11.04");
+  const [createdAtDate, setCreatedAtDate] = useState<string>("2026.11.05");
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [listenUrl, setListenUrl] = useState<string>("");
 
@@ -137,7 +144,10 @@ export default function ShiTownVoicePostcardPage() {
       const search = new URLSearchParams(window.location.search);
       const stepParam = Number(search.get("step"));
       if (stepParam === 1 || stepParam === 2 || stepParam === 3 || stepParam === 4) {
-        setCurrentStep(stepParam);
+        setOpenStep(stepParam);
+        if (stepParam >= 2) setHasSubmittedVoice(true);
+        if (stepParam >= 3) setHasMixedAudio(true);
+        if (stepParam >= 4) setHasGeneratedQr(true);
       }
     } catch {
       // Ignore URL search param errors
@@ -218,6 +228,11 @@ export default function ShiTownVoicePostcardPage() {
     setIsPlayingVoice(false);
     setPlayingBgmId(null);
     setIsPlayingMix(false);
+  };
+
+  const toggleStep = (step: 1 | 2 | 3 | 4) => {
+    stopAnyPlayback();
+    setOpenStep((prev) => (prev === step ? null : step));
   };
 
   const playBlob = (
@@ -313,7 +328,7 @@ export default function ShiTownVoicePostcardPage() {
     stopAnyPlayback();
     setErrorMessage(null);
     setIsGeneratingBgmOptions(true);
-    setAiStageMessage("1/2 正在聆聽語氣與構思配樂 Prompt...");
+    setAiStageMessage("1/2 正在聆聽語氣與構思配樂...");
 
     try {
       // Stage 1: Call /api/analyze-voice so Gemini 2.5 Flash listens to the voice tone & writes 2 tailored prompts
@@ -382,7 +397,8 @@ export default function ShiTownVoicePostcardPage() {
       setBgmBuffers(newBuffers);
       setBgmBlobs(newBlobs);
       setSelectedBgmId(activeRecommendations[0].id);
-      setCurrentStep(2);
+      setHasSubmittedVoice(true);
+      setOpenStep(2);
     } catch {
       setErrorMessage("準備背景音樂時發生錯誤，請再試一次。");
     } finally {
@@ -410,7 +426,9 @@ export default function ShiTownVoicePostcardPage() {
       });
       setMixedWavBlob(result.wavBlob);
       setMixedDuration(Math.round(result.durationSeconds));
-      setCurrentStep(3);
+      setMixedBgmId(selectedBgmId);
+      setHasMixedAudio(true);
+      setOpenStep(3);
     } finally {
       setIsMixing(false);
     }
@@ -425,6 +443,7 @@ export default function ShiTownVoicePostcardPage() {
 
     try {
       const chosenTrack =
+        bgmOptions.find((t) => t.id === mixedBgmId) ||
         bgmOptions.find((t) => t.id === selectedBgmId) ||
         bgmOptions[0];
 
@@ -452,7 +471,8 @@ export default function ShiTownVoicePostcardPage() {
 
       setKeepsakeId(record.id);
       setCreatedAtDate(record.createdAt);
-      setCurrentStep(4);
+      setHasGeneratedQr(true);
+      setOpenStep(4);
     } catch (err) {
       setErrorMessage(
         err instanceof Error ? err.message : "生成 QR Code 時發生錯誤"
@@ -481,10 +501,11 @@ export default function ShiTownVoicePostcardPage() {
   };
 
   const activeBgmTrack =
-    bgmOptions.find((t) => t.id === selectedBgmId) ||
-    bgmOptions[0];
+    bgmOptions.find((t) => t.id === selectedBgmId) || bgmOptions[0];
+  const mixedBgmTrack =
+    bgmOptions.find((t) => t.id === mixedBgmId) || activeBgmTrack;
 
-  const studioBody = (
+  return (
     <main className="atelier-wrapper">
       {/* Official Logo & Title */}
       <header className="brand-hero">
@@ -533,46 +554,42 @@ export default function ShiTownVoicePostcardPage() {
         </div>
       )}
 
-      {/* 4-Step Progressive Stack (Only active step expands!) */}
+      {/* 4-Step Free Accordion Stack (Any step can be clicked & opened at any time!) */}
       <div className="step-stack">
         {/* ================= STEP 01: RECORD VOICE ================= */}
         <section
-          className={`step-panel ${currentStep === 1 ? "active" : ""}`}
-          aria-label="第一步：錄下您的聲音"
+          className={`step-panel ${openStep === 1 ? "active" : ""}`}
+          aria-label="第一步：錄下聲音"
         >
-          <div className="step-summary-bar">
+          <button
+            type="button"
+            className="step-summary-bar"
+            onClick={() => toggleStep(1)}
+            aria-expanded={openStep === 1}
+          >
             <div className="step-title-left">
               <span className="step-index">01</span>
-              <h2 className="step-name">錄下您的聲音</h2>
+              <h2 className="step-name">錄下聲音</h2>
             </div>
 
             <div className="step-meta-right">
-              <span className="tabular-nums">
+              <span className="step-status-text tabular-nums">
                 {isRecording
                   ? `錄音中 ${formatTime(recordingSeconds)}`
                   : hasRecordedCustomVoice
                   ? `已錄製 ${formatTime(voiceDuration)}`
+                  : hasSubmittedVoice
+                  ? `已完成 (${formatTime(voiceDuration)})`
                   : `長度 ${formatTime(voiceDuration)}`}
               </span>
-              {currentStep > 1 && (
-                <button
-                  type="button"
-                  className="btn-text-edit"
-                  onClick={() => {
-                    stopAnyPlayback();
-                    setCurrentStep(1);
-                  }}
-                >
-                  重新錄音
-                </button>
-              )}
+              <ChevronDown size={18} className="step-chevron" />
             </div>
-          </div>
+          </button>
 
-          {currentStep === 1 && (
+          {openStep === 1 && (
             <div className="step-body">
               <p className="step-instruction">
-                請點擊「開始錄音」錄下您想說的話，錄完後可先試聽，確認無誤後點選「確認送出」。
+                請點擊「開始錄音」錄下您想說的話，錄完後可先試聽乾音，確認無誤後點選「確認送出」。
               </p>
 
               <div className="step-action-row">
@@ -584,7 +601,7 @@ export default function ShiTownVoicePostcardPage() {
                       onClick={handleStartRecording}
                     >
                       <Mic size={16} strokeWidth={1.75} />
-                      <span>開始麥克風錄音</span>
+                      <span>開始錄音</span>
                     </button>
                   ) : (
                     <button
@@ -593,7 +610,7 @@ export default function ShiTownVoicePostcardPage() {
                       onClick={handleStopRecording}
                     >
                       <Square size={16} strokeWidth={1.75} />
-                      <span>停止錄音 ({formatTime(recordingSeconds)})</span>
+                      <span>停止 ({formatTime(recordingSeconds)})</span>
                     </button>
                   )}
 
@@ -634,7 +651,7 @@ export default function ShiTownVoicePostcardPage() {
                 >
                   <span>
                     {isGeneratingBgmOptions
-                      ? aiStageMessage || "AI 正在配樂中..."
+                      ? aiStageMessage || "AI 配樂生成中..."
                       : "確認送出，交給 AI 配樂"}
                   </span>
                   <ArrowRight size={16} strokeWidth={1.75} />
@@ -646,379 +663,440 @@ export default function ShiTownVoicePostcardPage() {
 
         {/* ================= STEP 02: PICK 1 OF 2 AI BGM ================= */}
         <section
-          className={`step-panel ${
-            currentStep === 2 ? "active" : currentStep < 2 ? "locked" : ""
-          }`}
-          aria-label="第二步：挑選背景音樂"
+          className={`step-panel ${openStep === 2 ? "active" : ""}`}
+          aria-label="第二步：挑選配樂"
         >
-          <div className="step-summary-bar">
+          <button
+            type="button"
+            className="step-summary-bar"
+            onClick={() => toggleStep(2)}
+            aria-expanded={openStep === 2}
+          >
             <div className="step-title-left">
               <span className="step-index">02</span>
-              <h2 className="step-name">挑選 AI 背景音樂</h2>
+              <h2 className="step-name">挑選配樂</h2>
             </div>
 
             <div className="step-meta-right">
-              {currentStep < 2 ? (
-                <span>完成第一步後開啟</span>
+              <span className="step-status-text">
+                {!hasSubmittedVoice ? "請先完成第 01 步" : activeBgmTrack.title}
+              </span>
+              <ChevronDown size={18} className="step-chevron" />
+            </div>
+          </button>
+
+          {openStep === 2 && (
+            <div className="step-body">
+              {!hasSubmittedVoice ? (
+                <div className="step-empty-notice">
+                  <span>
+                    請先在「01 錄下聲音」完成錄音並按下確認送出，AI 就會根據您的語調生成兩首專屬背景音樂。
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setOpenStep(1)}
+                  >
+                    <span>前往 01 錄下聲音</span>
+                  </button>
+                </div>
               ) : (
                 <>
-                  <span>{activeBgmTrack.title}</span>
-                  {currentStep > 2 && (
-                    <button
-                      type="button"
-                      className="btn-text-edit"
-                      onClick={() => {
-                        stopAnyPlayback();
-                        setCurrentStep(2);
-                      }}
-                    >
-                      更換配樂
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
+                  <p className="step-instruction">
+                    {detectedTone
+                      ? `AI 聽取語音後偵測語調為「${detectedTone}」，為您量身生成以下兩首配樂（您可隨時回來試聽，不會洗掉已完成的合成）：`
+                      : "AI 已為您的聲音挑選兩首背景音樂，可先點擊右側「試聽」，選好後點選下方按鈕合成。"}
+                  </p>
 
-          {currentStep === 2 && (
-            <div className="step-body">
-              <p className="step-instruction">
-                {detectedTone
-                  ? `AI 聽取語音後偵測語調為「${detectedTone}」，為您量身挑選以下兩首背景音樂：`
-                  : "AI 已為您的聲音挑選兩首適合的背景音樂，請點選其中一首並按「確認配樂，開始合成」。"}
-              </p>
+                  <div
+                    className="bgm-option-list"
+                    role="radiogroup"
+                    aria-label="AI 推薦配樂選項"
+                  >
+                    {bgmOptions.map((track) => {
+                      const isSelected = selectedBgmId === track.id;
+                      const isPreviewing = playingBgmId === track.id;
+                      const trackBlob = bgmBlobs[track.id];
 
-              <div className="bgm-option-list" role="radiogroup" aria-label="AI 推薦配樂選項">
-                {bgmOptions.map((track) => {
-                  const isSelected = selectedBgmId === track.id;
-                  const isPreviewing = playingBgmId === track.id;
-                  const trackBlob = bgmBlobs[track.id];
-
-                  return (
-                    <div
-                      key={track.id}
-                      className={`bgm-option-row ${
-                        isSelected ? "selected" : ""
-                      }`}
-                      onClick={() => setSelectedBgmId(track.id)}
-                      role="radio"
-                      aria-checked={isSelected}
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setSelectedBgmId(track.id);
-                        }
-                      }}
-                    >
-                      <div className="bgm-option-left">
-                        <span className="radio-dot" aria-hidden="true">
-                          {isSelected && <span className="radio-dot-inner" />}
-                        </span>
-                        <div>
-                          <div className="bgm-option-title">{track.title}</div>
-                          <div className="bgm-option-desc">
-                            {track.description}
+                      return (
+                        <div
+                          key={track.id}
+                          className={`bgm-option-row ${
+                            isSelected ? "selected" : ""
+                          }`}
+                          onClick={() => setSelectedBgmId(track.id)}
+                          role="radio"
+                          aria-checked={isSelected}
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setSelectedBgmId(track.id);
+                            }
+                          }}
+                        >
+                          <div className="bgm-option-left">
+                            <span className="radio-dot" aria-hidden="true">
+                              {isSelected && <span className="radio-dot-inner" />}
+                            </span>
+                            <div>
+                              <div className="bgm-option-title">
+                                {track.title}
+                              </div>
+                              <div className="bgm-option-desc">
+                                {track.description}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
 
+                          <button
+                            type="button"
+                            className="btn-secondary bgm-preview-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!trackBlob) return;
+                              if (isPreviewing) {
+                                stopAnyPlayback();
+                              } else {
+                                playBlob(
+                                  trackBlob,
+                                  () => setPlayingBgmId(track.id),
+                                  () => setPlayingBgmId(null)
+                                );
+                              }
+                            }}
+                          >
+                            {isPreviewing ? (
+                              <>
+                                <Pause size={14} strokeWidth={1.75} />
+                                <span>停止</span>
+                              </>
+                            ) : (
+                              <>
+                                <Play size={14} strokeWidth={1.75} />
+                                <span>試聽</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div
+                    className="step-action-row"
+                    style={{ justifyContent: "flex-end" }}
+                  >
+                    {hasMixedAudio && selectedBgmId === mixedBgmId ? (
                       <button
                         type="button"
-                        className="btn-secondary"
-                        style={{ padding: "7px 14px", fontSize: "0.82rem" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!trackBlob) return;
-                          if (isPreviewing) {
-                            stopAnyPlayback();
-                          } else {
-                            playBlob(
-                              trackBlob,
-                              () => setPlayingBgmId(track.id),
-                              () => setPlayingBgmId(null)
-                            );
-                          }
+                        className="btn-primary"
+                        onClick={() => {
+                          stopAnyPlayback();
+                          setOpenStep(3);
                         }}
                       >
-                        {isPreviewing ? (
-                          <>
-                            <Pause size={14} strokeWidth={1.75} />
-                            <span>停止</span>
-                          </>
-                        ) : (
-                          <>
-                            <Play size={14} strokeWidth={1.75} />
-                            <span>試聽</span>
-                          </>
-                        )}
+                        <span>前往 03 試聽合成結果</span>
+                        <ArrowRight size={16} strokeWidth={1.75} />
                       </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="step-action-row" style={{ justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={handleConfirmStep2}
-                  disabled={isMixing}
-                >
-                  <span>
-                    {isMixing ? "正在合成聲音..." : "確認配樂，開始合成"}
-                  </span>
-                  <ArrowRight size={16} strokeWidth={1.75} />
-                </button>
-              </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={handleConfirmStep2}
+                        disabled={isMixing}
+                      >
+                        <span>
+                          {isMixing
+                            ? "正在合成聲音..."
+                            : hasMixedAudio
+                            ? "改用這首配樂重新合成"
+                            : "確認配樂，開始合成"}
+                        </span>
+                        <ArrowRight size={16} strokeWidth={1.75} />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </section>
 
         {/* ================= STEP 03: PREVIEW MIXED AUDIO ================= */}
         <section
-          className={`step-panel ${
-            currentStep === 3 ? "active" : currentStep < 3 ? "locked" : ""
-          }`}
-          aria-label="第三步：試聽合成聲音"
+          className={`step-panel ${openStep === 3 ? "active" : ""}`}
+          aria-label="第三步：試聽合成"
         >
-          <div className="step-summary-bar">
+          <button
+            type="button"
+            className="step-summary-bar"
+            onClick={() => toggleStep(3)}
+            aria-expanded={openStep === 3}
+          >
             <div className="step-title-left">
               <span className="step-index">03</span>
-              <h2 className="step-name">試聽合成聲音</h2>
+              <h2 className="step-name">試聽合成</h2>
             </div>
 
             <div className="step-meta-right">
-              {currentStep < 3 ? (
-                <span>完成第二步後開啟</span>
+              <span className="step-status-text tabular-nums">
+                {!hasMixedAudio
+                  ? "請先挑選配樂並合成"
+                  : `已合成 (${formatTime(mixedDuration)})`}
+              </span>
+              <ChevronDown size={18} className="step-chevron" />
+            </div>
+          </button>
+
+          {openStep === 3 && (
+            <div className="step-body">
+              {!hasMixedAudio ? (
+                <div className="step-empty-notice">
+                  <span>
+                    請先在「02 挑選配樂」選擇一首背景音樂並按下「確認配樂，開始合成」。
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setOpenStep(hasSubmittedVoice ? 2 : 1)}
+                  >
+                    <span>
+                      {hasSubmittedVoice ? "前往 02 挑選配樂" : "前往 01 錄下聲音"}
+                    </span>
+                  </button>
+                </div>
               ) : (
                 <>
-                  <span className="tabular-nums">
-                    合成完成 ({formatTime(mixedDuration)})
-                  </span>
-                  {currentStep > 3 && (
+                  <p className="step-instruction">
+                    已將您的聲音與「{mixedBgmTrack.title}」完成合成。請點擊下方按鈕試聽，確認沒問題即可生成專屬條碼。
+                  </p>
+
+                  {/* Single-Line Player Row (Fixed button width, never wraps onto 2 lines!) */}
+                  <div className="player-single-line">
                     <button
                       type="button"
-                      className="btn-text-edit"
+                      className="btn-secondary player-toggle-btn"
                       onClick={() => {
-                        stopAnyPlayback();
-                        setCurrentStep(3);
+                        if (isPlayingMix) {
+                          stopAnyPlayback();
+                        } else if (mixedWavBlob) {
+                          playBlob(
+                            mixedWavBlob,
+                            () => setIsPlayingMix(true),
+                            () => setIsPlayingMix(false)
+                          );
+                        }
+                      }}
+                      disabled={!mixedWavBlob || isMixing}
+                    >
+                      {isPlayingMix ? (
+                        <>
+                          <Pause size={16} strokeWidth={1.75} />
+                          <span>停止試聽</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 size={16} strokeWidth={1.75} />
+                          <span>試聽合成</span>
+                        </>
+                      )}
+                    </button>
+
+                    <div
+                      className={`soundwave-bars ${
+                        isPlayingMix ? "playing" : ""
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {SOUNDWAVE_HEIGHTS.map((h, idx) => (
+                        <span
+                          key={idx}
+                          className="soundwave-bar"
+                          style={{ height: `${h}px` }}
+                        />
+                      ))}
+                    </div>
+
+                    <span
+                      className="tabular-nums"
+                      style={{
+                        fontSize: "0.84rem",
+                        fontWeight: 600,
+                        color: "#684E3A",
+                        flexShrink: 0,
                       }}
                     >
-                      返回試聽
+                      {formatTime(mixedDuration)}
+                    </span>
+                  </div>
+
+                  <div className="step-action-row">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={handleDownloadMixedWav}
+                      disabled={!mixedWavBlob}
+                    >
+                      <Download size={16} strokeWidth={1.75} />
+                      <span>下載合成音檔 (.WAV)</span>
                     </button>
-                  )}
+
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={handleConfirmStep3}
+                      disabled={!mixedWavBlob || isGeneratingQr}
+                    >
+                      <QrCode size={16} strokeWidth={1.75} />
+                      <span>
+                        {isGeneratingQr
+                          ? "正在生成條碼..."
+                          : hasGeneratedQr
+                          ? "更新專屬 QR Code"
+                          : "試聽 OK，生成 QR Code"}
+                      </span>
+                    </button>
+                  </div>
                 </>
               )}
-            </div>
-          </div>
-
-          {currentStep === 3 && (
-            <div className="step-body">
-              <p className="step-instruction">
-                已將您的聲音與「{activeBgmTrack.title}」完成合成。請點擊下方按鈕試聽，確認沒問題即可生成專屬 QR Code。
-              </p>
-
-              {/* Single-Line Player Row (Fixed button width, never wraps onto 2 lines!) */}
-              <div className="player-single-line">
-                <button
-                  type="button"
-                  className="btn-secondary player-toggle-btn"
-                  onClick={() => {
-                    if (isPlayingMix) {
-                      stopAnyPlayback();
-                    } else if (mixedWavBlob) {
-                      playBlob(
-                        mixedWavBlob,
-                        () => setIsPlayingMix(true),
-                        () => setIsPlayingMix(false)
-                      );
-                    }
-                  }}
-                  disabled={!mixedWavBlob || isMixing}
-                >
-                  {isPlayingMix ? (
-                    <>
-                      <Pause size={16} strokeWidth={1.75} />
-                      <span>停止試聽</span>
-                    </>
-                  ) : (
-                    <>
-                      <Volume2 size={16} strokeWidth={1.75} />
-                      <span>試聽合成聲音</span>
-                    </>
-                  )}
-                </button>
-
-                <div
-                  className={`soundwave-bars ${isPlayingMix ? "playing" : ""}`}
-                  aria-hidden="true"
-                >
-                  {SOUNDWAVE_HEIGHTS.map((h, idx) => (
-                    <span
-                      key={idx}
-                      className="soundwave-bar"
-                      style={{ height: `${h}px` }}
-                    />
-                  ))}
-                </div>
-
-                <span
-                  className="tabular-nums"
-                  style={{
-                    fontSize: "0.84rem",
-                    fontWeight: 600,
-                    color: "#684E3A",
-                    flexShrink: 0,
-                  }}
-                >
-                  {formatTime(mixedDuration)}
-                </span>
-              </div>
-
-              <div className="step-action-row">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={handleDownloadMixedWav}
-                  disabled={!mixedWavBlob}
-                >
-                  <Download size={16} strokeWidth={1.75} />
-                  <span>下載合成音檔 (.WAV)</span>
-                </button>
-
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={handleConfirmStep3}
-                  disabled={!mixedWavBlob || isGeneratingQr}
-                >
-                  <QrCode size={16} strokeWidth={1.75} />
-                  <span>
-                    {isGeneratingQr
-                      ? "正在生成 QR Code..."
-                      : "試聽 OK，生成 QR Code"}
-                  </span>
-                </button>
-              </div>
             </div>
           )}
         </section>
 
         {/* ================= STEP 04: DOWNLOAD QR CODE ================= */}
         <section
-          className={`step-panel ${
-            currentStep === 4 ? "active" : currentStep < 4 ? "locked" : ""
-          }`}
-          aria-label="第四步：專屬留聲 QR Code"
+          className={`step-panel ${openStep === 4 ? "active" : ""}`}
+          aria-label="第四步：專屬條碼"
         >
-          <div className="step-summary-bar">
+          <button
+            type="button"
+            className="step-summary-bar"
+            onClick={() => toggleStep(4)}
+            aria-expanded={openStep === 4}
+          >
             <div className="step-title-left">
               <span className="step-index">04</span>
-              <h2 className="step-name">專屬留聲 QR Code</h2>
+              <h2 className="step-name">專屬條碼</h2>
             </div>
 
             <div className="step-meta-right">
-              {currentStep < 4 ? (
-                <span>確認合成後生成</span>
-              ) : (
-                <span className="tabular-nums">
-                  編號 #{keepsakeId.toUpperCase()}
-                </span>
-              )}
+              <span className="step-status-text tabular-nums">
+                {!hasGeneratedQr
+                  ? "請先確認合成聲音"
+                  : `#${keepsakeId.toUpperCase()}`}
+              </span>
+              <ChevronDown size={18} className="step-chevron" />
             </div>
-          </div>
+          </button>
 
-          {currentStep === 4 && (
+          {openStep === 4 && (
             <div className="step-body">
-              <div className="qr-result-layout">
-                <div className="qr-image-frame">
-                  {qrDataUrl ? (
-                    <img
-                      src={qrDataUrl}
-                      alt="港町留聲專屬 QR Code"
-                      width={148}
-                      height={148}
-                      style={{ display: "block" }}
-                    />
-                  ) : (
-                    <QrCode size={96} color="#3A2314" />
-                  )}
+              {!hasGeneratedQr ? (
+                <div className="step-empty-notice">
+                  <span>
+                    請先在「03 試聽合成」試聽您的作品，並點選「試聽 OK，生成 QR Code」。
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() =>
+                      setOpenStep(
+                        hasMixedAudio ? 3 : hasSubmittedVoice ? 2 : 1
+                      )
+                    }
+                  >
+                    <span>
+                      {hasMixedAudio
+                        ? "前往 03 試聽合成"
+                        : hasSubmittedVoice
+                        ? "前往 02 挑選配樂"
+                        : "前往 01 錄下聲音"}
+                    </span>
+                  </button>
                 </div>
+              ) : (
+                <div className="qr-result-layout">
+                  <div className="qr-image-frame">
+                    {qrDataUrl ? (
+                      <img
+                        src={qrDataUrl}
+                        alt="港町留聲專屬 QR Code"
+                        width={148}
+                        height={148}
+                        style={{ display: "block" }}
+                      />
+                    ) : (
+                      <QrCode size={96} color="#3A2314" />
+                    )}
+                  </div>
 
-                <div>
-                  <h3
-                    className="display-serif"
-                    style={{
-                      fontSize: "1.2rem",
-                      fontWeight: 700,
-                      color: "#3A2314",
-                      marginBottom: "6px",
-                    }}
-                  >
-                    您的專屬留聲 QR Code 已完成
-                  </h3>
-                  <p
-                    style={{
-                      fontSize: "0.9rem",
-                      color: "#684E3A",
-                      marginBottom: "14px",
-                    }}
-                  >
-                    未來任何人使用手機相機掃描這張 QR Code，就能直接聽到這段合成好的聲音記憶。
-                  </p>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "10px",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      onClick={() =>
-                        downloadStandaloneQrPng(listenUrl, keepsakeId)
-                      }
+                  <div style={{ flex: 1 }}>
+                    <h3
+                      className="display-serif"
+                      style={{
+                        fontSize: "1.18rem",
+                        fontWeight: 700,
+                        color: "#3A2314",
+                        marginBottom: "6px",
+                      }}
                     >
-                      <Download size={16} strokeWidth={1.75} />
-                      <span>下載 QR Code (.PNG)</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() =>
-                        downloadVinylSleeveCardPng({
-                          id: keepsakeId,
-                          bgmTitle: activeBgmTrack.title,
-                          durationSeconds: mixedDuration,
-                          createdAt: createdAtDate,
-                          listenUrl,
-                        })
-                      }
+                      您的專屬留聲條碼已完成
+                    </h3>
+                    <p
+                      style={{
+                        fontSize: "0.88rem",
+                        color: "#684E3A",
+                        marginBottom: "14px",
+                      }}
                     >
-                      <Download size={16} strokeWidth={1.75} />
-                      <span>下載聲音明信片 (.PNG)</span>
-                    </button>
+                      未來任何人使用手機相機掃描這張 QR Code，就能直接聽到這段合成好的聲音記憶。
+                    </p>
 
-                    <a
-                      href={`/listen/${keepsakeId}`}
-                      className="btn-secondary"
-                    >
-                      <ExternalLink size={16} strokeWidth={1.75} />
-                      <span>預覽掃碼收聽頁</span>
-                    </a>
+                    <div className="qr-actions-group">
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() =>
+                          downloadStandaloneQrPng(listenUrl, keepsakeId)
+                        }
+                      >
+                        <Download size={16} strokeWidth={1.75} />
+                        <span>下載 QR Code (.PNG)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() =>
+                          downloadVinylSleeveCardPng({
+                            id: keepsakeId,
+                            bgmTitle: mixedBgmTrack.title,
+                            durationSeconds: mixedDuration,
+                            createdAt: createdAtDate,
+                            listenUrl,
+                          })
+                        }
+                      >
+                        <Download size={16} strokeWidth={1.75} />
+                        <span>下載聲音明信片 (.PNG)</span>
+                      </button>
+
+                      <a
+                        href={`/listen/${keepsakeId}`}
+                        className="btn-secondary"
+                      >
+                        <ExternalLink size={16} strokeWidth={1.75} />
+                        <span>預覽掃碼收聽頁</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </section>
       </div>
     </main>
   );
-
-  return studioBody;
 }
