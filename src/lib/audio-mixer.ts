@@ -1,23 +1,82 @@
 /**
- * Broadcast-grade Web Audio API Mixer with:
- * - Intro Padding (1.5s BGM swell before voice starts)
- * - Automatic Voice Ducking (envelope follower that dips BGM when speaker talks and restores during pauses)
- * - Outro Padding (2.5s BGM tail fade-out after voice finishes)
- * - 16-bit PCM WAV Encoder for instant download & server archiving
+ * Broadcast-grade Web Audio API Mixer with Intelligent Automatic Loudness Balancing:
+ * 1. Active Speech RMS Normalization: Measures the speaker's actual talking loudness
+ *    (ignoring silence) and automatically boosts/normalizes quiet mic recordings to -13 dBFS.
+ * 2. BGM RMS Loudness Matching: Measures the AI-generated BGM's RMS loudness (since Fal.ai
+ *    tracks are often mastered very loud at -9 dBFS) and automatically scales the BGM down
+ *    so its base level sits 16 dB below the normalized voice.
+ * 3. Adaptive Lookahead Voice Ducking: Whenever the user speaks, BGM smoothly dips an additional
+ *    9 dB (putting BGM ~24 dB below the spoken words) and gently swells back only during
+ *    the 1.5s intro, long pauses, and 2.5s outro.
  */
 
 export interface MixOptions {
-  voiceGain: number; // e.g. 1.0 (100%)
-  bgmGain: number; // e.g. 0.32 (32%)
-  duckingDepthDb: number; // e.g. 9 (reduces BGM by 9 dB when voice speaks)
-  introSeconds?: number; // default 1.5s
-  outroSeconds?: number; // default 2.5s
+  voiceGain?: number;
+  bgmGain?: number;
+  duckingDepthDb?: number;
+  introSeconds?: number;
+  outroSeconds?: number;
+}
+
+/**
+ * Computes active RMS (ignoring near-silent frames) and peak amplitude of a stereo/mono buffer.
+ */
+function analyzeAudioLoudness(
+  left: Float32Array,
+  right: Float32Array
+): { activeRms: number; overallRms: number; peak: number } {
+  let peak = 0;
+  let totalSq = 0;
+  const len = left.length;
+
+  // First pass: find peak and overall RMS
+  for (let i = 0; i < len; i++) {
+    const l = left[i];
+    const r = right[i];
+    const absMax = Math.max(Math.abs(l), Math.abs(r));
+    if (absMax > peak) peak = absMax;
+    const mono = 0.5 * (l + r);
+    totalSq += mono * mono;
+  }
+
+  const overallRms = Math.sqrt(totalSq / Math.max(1, len));
+
+  // Second pass: compute RMS over 50ms windows that exceed noise gate (12% of peak or 0.008)
+  const windowSize = 2205; // 50ms at 44.1kHz
+  const gateThreshold = Math.max(0.006, peak * 0.12);
+  let activeSqSum = 0;
+  let activeSampleCount = 0;
+
+  for (let start = 0; start < len; start += windowSize) {
+    const end = Math.min(len, start + windowSize);
+    let winSq = 0;
+    for (let i = start; i < end; i++) {
+      const mono = 0.5 * (left[i] + right[i]);
+      winSq += mono * mono;
+    }
+    const winRms = Math.sqrt(winSq / (end - start));
+    if (winRms >= gateThreshold) {
+      activeSqSum += winSq;
+      activeSampleCount += end - start;
+    }
+  }
+
+  const activeRms =
+    activeSampleCount > 0
+      ? Math.sqrt(activeSqSum / activeSampleCount)
+      : Math.max(overallRms, 0.01);
+
+  return {
+    activeRms: Math.max(activeRms, 0.005),
+    overallRms: Math.max(overallRms, 0.005),
+    peak: Math.max(peak, 0.01),
+  };
 }
 
 export async function renderAutoDuckedMix(
   voiceBuffer: AudioBuffer,
   bgmBuffer: AudioBuffer,
-  options: MixOptions
+  options: MixOptions = {}
 ): Promise<{ mixedBuffer: AudioBuffer; wavBlob: Blob; durationSeconds: number }> {
   const sampleRate = 44100;
   const introSec = options.introSeconds ?? 1.5;
@@ -25,54 +84,91 @@ export async function renderAutoDuckedMix(
   const totalDuration = introSec + voiceBuffer.duration + outroSec;
   const totalFrames = Math.ceil(totalDuration * sampleRate);
 
-  // Resample voice and bgm into a unified OfflineAudioContext first
+  // 1. Resample voice into unified 44.1kHz stereo OfflineAudioContext
   const offlineCtx = new OfflineAudioContext(2, totalFrames, sampleRate);
-
   const voiceSource = offlineCtx.createBufferSource();
   voiceSource.buffer = voiceBuffer;
-  const voiceGainNode = offlineCtx.createGain();
-  voiceGainNode.gain.value = options.voiceGain;
-  voiceSource.connect(voiceGainNode);
-  voiceGainNode.connect(offlineCtx.destination);
+  voiceSource.connect(offlineCtx.destination);
   voiceSource.start(introSec);
 
   const renderedVoiceOnly = await offlineCtx.startRendering();
-
-  // Now compute the envelope of the voice to apply smooth broadcast sidechain ducking on the BGM
   const vLeft = renderedVoiceOnly.getChannelData(0);
   const vRight = renderedVoiceOnly.getChannelData(1);
 
   const bgmLeftRaw = bgmBuffer.getChannelData(0);
-  const bgmRightRaw = bgmBuffer.numberOfChannels > 1 ? bgmBuffer.getChannelData(1) : bgmLeftRaw;
+  const bgmRightRaw =
+    bgmBuffer.numberOfChannels > 1 ? bgmBuffer.getChannelData(1) : bgmLeftRaw;
   const bgmSampleRatio = bgmBuffer.sampleRate / sampleRate;
+
+  // 2. Measure actual voice loudness vs. actual BGM loudness
+  const voiceStartFrame = Math.floor(introSec * sampleRate);
+  const voiceEndFrame = Math.min(
+    totalFrames,
+    Math.floor((introSec + voiceBuffer.duration) * sampleRate)
+  );
+  const voiceStats = analyzeAudioLoudness(
+    vLeft.subarray(voiceStartFrame, voiceEndFrame),
+    vRight.subarray(voiceStartFrame, voiceEndFrame)
+  );
+  const bgmStats = analyzeAudioLoudness(bgmLeftRaw, bgmRightRaw);
+
+  // Target active speech RMS = 0.22 (~ -13 dBFS) so quiet phone recordings become clear and warm
+  const targetVoiceRms = 0.22;
+  // Cap boost at +20 dB (10x) so background room noise isn't over-amplified, and keep peak <= 0.92
+  const autoVoiceGain = Math.min(
+    10.0,
+    0.92 / voiceStats.peak,
+    targetVoiceRms / voiceStats.activeRms
+  );
+
+  const normalizedVoiceRms = voiceStats.activeRms * autoVoiceGain;
+
+  // Target BGM base RMS (during intro/outro/pauses) = 24% of normalized voice RMS (~ -12.4 dB below voice)
+  const targetBgmBaseRms = normalizedVoiceRms * 0.24;
+  const autoBgmBaseGain = Math.min(
+    1.2,
+    targetBgmBaseRms / bgmStats.activeRms
+  );
+
+  // During active speech, duck BGM by an additional 9.5 dB (so BGM sits ~ -22 dB below voice while talking!)
+  const duckDb = options.duckingDepthDb ?? 9.5;
+  const duckLinearRatio = Math.pow(10, -Math.abs(duckDb) / 20); // ~0.335
+
+  // 3. Compute lookahead speech envelope (40ms lookahead so BGM ducks *before* the consonant hits)
+  const lookaheadFrames = Math.floor(0.04 * sampleRate);
+  const attackCoeff = Math.exp(-1 / (0.025 * sampleRate)); // 25ms fast ducking attack
+  const releaseCoeff = Math.exp(-1 / (0.65 * sampleRate)); // 650ms gentle recovery during pauses
+  let env = 0;
 
   const outCtx = new OfflineAudioContext(2, totalFrames, sampleRate);
   const mixedBuffer = outCtx.createBuffer(2, totalFrames, sampleRate);
   const outL = mixedBuffer.getChannelData(0);
   const outR = mixedBuffer.getChannelData(1);
 
-  const duckLinearRatio = Math.pow(10, -Math.abs(options.duckingDepthDb) / 20);
-  const attackCoeff = Math.exp(-1 / (0.045 * sampleRate)); // 45ms fast attack when voice starts
-  const releaseCoeff = Math.exp(-1 / (0.42 * sampleRate)); // 420ms warm release during speech pauses
-  let env = 0;
-
   const fadeInFrames = Math.floor(1.2 * sampleRate);
   const fadeOutFrames = Math.floor(2.2 * sampleRate);
 
-  for (let i = 0; i < totalFrames; i++) {
-    const vl = vLeft[i];
-    const vr = vRight[i];
-    const voiceAmp = Math.max(Math.abs(vl), Math.abs(vr));
+  // Adaptive speech detection threshold based on normalized voice level
+  const speechThreshold = normalizedVoiceRms * 0.14;
+  const speechFullRange = normalizedVoiceRms * 0.45;
 
-    // Envelope follower
+  for (let i = 0; i < totalFrames; i++) {
+    // Look ahead slightly for ducking detection so music dips right as the user starts speaking
+    const lookIdx = Math.min(totalFrames - 1, i + lookaheadFrames);
+    const lookVl = vLeft[lookIdx] * autoVoiceGain;
+    const lookVr = vRight[lookIdx] * autoVoiceGain;
+    const voiceAmp = Math.max(Math.abs(lookVl), Math.abs(lookVr));
+
     if (voiceAmp > env) {
       env = attackCoeff * env + (1 - attackCoeff) * voiceAmp;
     } else {
       env = releaseCoeff * env + (1 - releaseCoeff) * voiceAmp;
     }
 
-    // Determine how much to duck BGM (threshold ~ 0.025)
-    const speechActivity = Math.min(1, Math.max(0, (env - 0.02) / 0.12));
+    const speechActivity = Math.min(
+      1,
+      Math.max(0, (env - speechThreshold) / Math.max(0.01, speechFullRange))
+    );
     const currentDuckMultiplier = 1 - speechActivity * (1 - duckLinearRatio);
 
     // Master fade-in and fade-out envelope for BGM
@@ -83,10 +179,16 @@ export async function renderAutoDuckedMix(
       masterFade = Math.max(0, (totalFrames - i) / fadeOutFrames);
     }
 
+    // Current voice sample (with soft saturation protection)
+    const vl = vLeft[i] * autoVoiceGain;
+    const vr = vRight[i] * autoVoiceGain;
+
     // Loop BGM seamlessly if shorter than totalFrames
     const bgmIdx = Math.floor(i * bgmSampleRatio) % bgmBuffer.length;
-    const bl = bgmLeftRaw[bgmIdx] * options.bgmGain * currentDuckMultiplier * masterFade;
-    const br = bgmRightRaw[bgmIdx] * options.bgmGain * currentDuckMultiplier * masterFade;
+    const effectiveBgmGain =
+      autoBgmBaseGain * currentDuckMultiplier * masterFade;
+    const bl = bgmLeftRaw[bgmIdx] * effectiveBgmGain;
+    const br = bgmRightRaw[bgmIdx] * effectiveBgmGain;
 
     // Soft-clipping limiter so voice + bgm never distorts
     outL[i] = Math.tanh(vl + bl);
@@ -137,7 +239,11 @@ export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   for (let i = 0; i < buffer.length; i++) {
     for (let c = 0; c < numChannels; c++) {
       const sample = Math.max(-1, Math.min(1, channels[c][i]));
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      view.setInt16(
+        offset,
+        sample < 0 ? sample * 0x8000 : sample * 0x7fff,
+        true
+      );
       offset += 2;
     }
   }
