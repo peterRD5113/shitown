@@ -1,0 +1,245 @@
+{
+  "title": "選擇「有聲祝福 QR Code 工作台」的視覺設計方向",
+  "question": "點擊卡片右上角的展開按鈕可預覽完整 1440x900 網頁設計稿，選擇您最喜歡的方向以鎖定設計規範。",
+  "options": [
+    {
+      "id": "assigned",
+      "kind": "assigned",
+      "label": "手工調香室配方箋 (Apothecary Formula Studio)",
+      "kicker": "THE ROLL",
+      "lineage": "手工調香實驗室配方單與封瓶批號標籤",
+      "thesis": "將「人聲口白」視為前調、「背景音樂/環境聲」視為基底調配，封存為帶專屬批號的 QR 標籤。",
+      "palette": [
+        "#F2EFE9",
+        "#1C2826",
+        "#B45309",
+        "#2D5A43"
+      ],
+      "materials": [
+        "亞麻棉紙底",
+        "深森林綠標頭與黃銅燈號"
+      ],
+      "viewport": "左側為四步配方調配欄（錄製前調、選擇氛圍基底、前調/基底閃避比例條），右側為封瓶批號標籤風格的即時 QR 有聲小卡。",
+      "risk": "若字體與格線不夠俐落，容易偏離音訊工具的直覺感。",
+      "raised": [
+        {
+          "from": "signals-instruments-split-flap-concourse",
+          "raise": "每個步驟配備明確的琥珀色處理中與翠綠色就緒狀態燈號。"
+        },
+        {
+          "from": "rw-timetable-slide-rack",
+          "raise": "當前操作中的步驟使用單一深色反白底板聚焦視覺。"
+        },
+        {
+          "from": "pop-culture-shelf-doujin-event-catalog",
+          "raise": "選中的氛圍卡片帶有鮮明的手工勾選印記。"
+        },
+        {
+          "from": "wayfinding-cartography-signage-terminal-yellow-wayfinding",
+          "raise": "四個步驟皆標示醒目的等寬序號與下一步行動引導。"
+        }
+      ],
+      "html": ".impeccable/mocks/decision/assigned.html",
+      "comp": ".impeccable/mocks/decision/assigned.png"
+    },
+    {
+      "id": "model-pick",
+      "kind": "pick",
+      "label": "日本爵士喫茶點播單與黑膠內袋 (Jazz Kissa & Record Sleeve)",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "東京深夜爵士喫茶點播卡與 7 吋黑膠單曲日版側標 (Obi-strip)",
+      "thesis": "像在深夜黑膠咖啡館寫下一張點播留言卡，右側即時生成帶有日版側標 (Obi) 的 7 吋黑膠封套 QR 小卡。",
+      "palette": [
+        "#F4EFE6",
+        "#1E1916",
+        "#C84B31",
+        "#2D5A43"
+      ],
+      "materials": [
+        "未漂白原漿紙",
+        "朱紅印章與黑膠側標紙帶"
+      ],
+      "viewport": "深焙咖啡色頂欄搭配左側四步喫茶點播單（錄音波形、AI/氛圍選單、閃避推桿），右側為帶側標 QR Code 的 7 吋黑膠單曲封套預覽。",
+      "risk": "溫暖復古黑膠語彙在此類產品中較為人熟知。",
+      "html": ".impeccable/mocks/decision/model-pick.html",
+      "comp": ".impeccable/mocks/decision/model-pick.png"
+    },
+    {
+      "id": "challenger-botanical",
+      "kind": "challenger",
+      "catalogId": "editorial-sequence-montage-botanical-folio-season",
+      "label": "植物標本館四季圖譜 (Botanical Folio Sequence)",
+      "verdict": "competitive",
+      "lineage": "19 世紀植物學連續生長階段圖鑑與標本台紙",
+      "thesis": "將「乾音→配樂→混音→封存 QR 小卡」視為同一株聲音標本從種子到盛開的四塊等比例圖版。",
+      "palette": [
+        "#F6F2E9",
+        "#283618",
+        "#9B2226",
+        "#6B705C"
+      ],
+      "materials": [
+        "標本台紙奶油底",
+        "極細深褐格線與緋紅果實點綴"
+      ],
+      "viewport": "共享同一條基準線的四階段标本圖版工作台，右側標本銘牌固定展示 QR Code 與收件人題詞。",
+      "case": "高度契合「把珍貴聲音像壓花標本般封存送禮」的情感共鳴，且階段對齊極為清晰。",
+      "risk": "需要確保音訊控制器在圖鑑排版中依然維持高辨識度。",
+      "html": ".impeccable/mocks/decision/challenger-botanical.html",
+      "comp": ".impeccable/mocks/decision/challenger-botanical.png",
+      "hero": "https://impeccable.style/worlds/cards/editorial-sequence-montage-botanical-folio-season-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/editorial-sequence-montage-botanical-folio-season.webp"
+    },
+    {
+      "id": "challenger-graphite",
+      "kind": "challenger",
+      "catalogId": "digital-design-canon-dark-first-developer-console",
+      "label": "極簡石墨深色錄音室 (Dark-First Graphite Console)",
+      "verdict": "competitive",
+      "lineage": "現代深色專業精密主控台與 1px 髮絲分格介面",
+      "thesis": "無陰影的深石墨灰面板以 1px 極細分格線切分四個音訊工作區，重錄等破壞性按鈕刻意留白隔離。",
+      "palette": [
+        "#121316",
+        "#1C1E24",
+        "#E5E7EB",
+        "#F59E0B"
+      ],
+      "materials": [
+        "啞光石墨面板",
+        "1px 髮絲格線與語法高亮狀態色"
+      ],
+      "viewport": "全畫面四格無縫拼接的深色錄音與自動閃避混音工作台，右側獨立面板即時渲染高對比 QR 卡片。",
+      "case": "操作精準度與音訊工具感最強，完全沒有多餘裝飾。",
+      "risk": "對送禮祝福場景而言較偏冷調專業感。",
+      "html": ".impeccable/mocks/decision/challenger-graphite.html",
+      "comp": ".impeccable/mocks/decision/challenger-graphite.png",
+      "hero": "https://impeccable.style/worlds/cards/digital-design-canon-dark-first-developer-console-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/digital-design-canon-dark-first-developer-console.webp"
+    },
+    {
+      "id": "challenger-split-flap",
+      "kind": "challenger",
+      "catalogId": "signals-instruments-split-flap-concourse",
+      "label": "車站翻頁時刻表 (Split-Flap Concourse)",
+      "verdict": "declined",
+      "lineage": "歐洲車站大廳機械翻頁時刻牌",
+      "palette": [
+        "#18181B",
+        "#F4F4F5",
+        "#F59E0B",
+        "#EF4444"
+      ],
+      "materials": [
+        "消光黑翻頁字牌",
+        "拉絲鋼框與琥珀延誤燈"
+      ],
+      "viewport": "以固定字元格排列的翻頁式狀態列。",
+      "case": "固定字元格不適合自由長度的口白字幕與混音滑桿，且匆忙的車站感與私密祝福不符。",
+      "risk": "機械翻頁感過強會喧賓奪主。",
+      "kept": "吸收其琥珀色處理中與翠綠色就緒的明確狀態燈號切換。",
+      "hero": "https://impeccable.style/worlds/cards/signals-instruments-split-flap-concourse-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/signals-instruments-split-flap-concourse.webp"
+    },
+    {
+      "id": "challenger-timetable",
+      "kind": "challenger",
+      "catalogId": "rw-timetable-slide-rack",
+      "label": "燈箱傾斜玻璃時刻表 (Timetable Slide Rack)",
+      "verdict": "declined",
+      "lineage": "1971 年燈箱上的傾斜口袋時刻表",
+      "palette": [
+        "#EAB308",
+        "#1E293B",
+        "#F8FAFC",
+        "#DC2626"
+      ],
+      "materials": [
+        "金黃燈箱底",
+        "11度傾斜玻璃片"
+      ],
+      "viewport": "全站單一字級與 11 度傾斜平行四邊形容器。",
+      "case": "單一字級與傾斜容器會干擾錄音與混音滑桿的直覺操作。",
+      "risk": "過度形式化影響易用性。",
+      "kept": "吸收其「每個畫面僅允許一個反白焦點區塊」的視覺紀律。",
+      "hero": "https://impeccable.style/worlds/cards/rw-timetable-slide-rack-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/rw-timetable-slide-rack.webp"
+    },
+    {
+      "id": "challenger-doujin",
+      "kind": "challenger",
+      "catalogId": "pop-culture-shelf-doujin-event-catalog",
+      "label": "新聞紙郵票格場刊 (Convention Circle Catalog)",
+      "verdict": "declined",
+      "lineage": "新聞紙印刷的高密度同人展攤位索引",
+      "palette": [
+        "#E5E0D8",
+        "#171717",
+        "#2563EB"
+      ],
+      "materials": [
+        "新聞紙灰底",
+        "原子筆手繪圈選痕跡"
+      ],
+      "viewport": "密集排列的郵票尺寸縮圖網格。",
+      "case": "適合上百個項目的大型目錄，不適合專注於單一語音卡片的四步製作流程。",
+      "risk": "網格過碎無法凸顯黑膠/小卡預覽。",
+      "kept": "吸收其「選中項目帶有鮮明手繪圈選記號」的直覺回饋。",
+      "hero": "https://impeccable.style/worlds/cards/pop-culture-shelf-doujin-event-catalog-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/pop-culture-shelf-doujin-event-catalog.webp"
+    },
+    {
+      "id": "challenger-wayfinding",
+      "kind": "challenger",
+      "catalogId": "wayfinding-cartography-signage-terminal-yellow-wayfinding",
+      "label": "機場航廈黃色導視牌 (Terminal Yellow Wayfinding)",
+      "verdict": "declined",
+      "lineage": "史基浦機場高彩度黃黑懸掛導視系統",
+      "palette": [
+        "#FACC15",
+        "#111827",
+        "#FFFFFF"
+      ],
+      "materials": [
+        "高彩度導視黃底",
+        "巨型登機門編號與黑底白圖標"
+      ],
+      "viewport": "懸掛式黃色橫帶指引每一個決策節點。",
+      "case": "公共運輸導視感過於冷硬，不符合溫暖禮物小卡的情境。",
+      "risk": "高面積刺眼黃色不適合長時間錄音操作。",
+      "kept": "吸收其「巨型步驟序號與明確下一步箭頭」的動線引導。",
+      "hero": "https://impeccable.style/worlds/cards/wayfinding-cartography-signage-terminal-yellow-wayfinding-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/wayfinding-cartography-signage-terminal-yellow-wayfinding.webp"
+    }
+  ],
+  "reroll": {
+    "registers": [
+      "safer",
+      "bolder"
+    ]
+  },
+  "buildPath": {
+    "value": "code",
+    "toggle": false
+  },
+  "canon": true,
+  "canonCard": {
+    "kind": "canon",
+    "label": "現代清爽文具工作台 (Clean Stationery Studio)",
+    "thesis": "乾淨明亮的現代白底圓角卡片佈局，零學習成本的標準工具介面。",
+    "palette": [
+      "#FFFFFF",
+      "#F8FAFC",
+      "#0F172A",
+      "#4F46E5"
+    ],
+    "materials": [
+      "純白卡片",
+      "柔和陰影與現代無襯線體"
+    ],
+    "viewport": "左側標準白底步驟卡片，右側簡潔 QR Code 預覽。",
+    "risk": "與一般市面上的 SaaS 工具較難區分特色。",
+    "html": ".impeccable/mocks/decision/canon.html",
+    "comp": ".impeccable/mocks/decision/canon.png"
+  },
+  "steer": true
+}

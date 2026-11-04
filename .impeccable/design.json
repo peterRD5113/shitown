@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "name": "蒔町・拾光事務所 — 03 蒔お 港町留聲計畫",
+  "seed": "seed:0d91d555b3ac4c46",
+  "aesthetic": "Shi Town Heritage Washi & Voice Postcard (蒔町老屋和紙與港町留聲明信片)",
+  "tokens": {
+    "colors": {
+      "bgWashi": "#F6EFE6",
+      "bgCard": "#FBF7F0",
+      "bgKraftSub": "#EFE4D4",
+      "inkCoffee": "#2B1B12",
+      "inkCaramel": "#654A33",
+      "accentCinnamon": "#7A5233",
+      "accentEspresso": "#362216",
+      "accentSage": "#546247",
+      "borderWarm": "#D5C3AE"
+    },
+    "typography": {
+      "display": "'Shippori Mincho', 'Noto Serif TC', serif",
+      "sans": "'Noto Sans TC', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    }
+  }
+}
