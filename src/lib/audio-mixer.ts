@@ -123,16 +123,16 @@ export async function renderAutoDuckedMix(
 
   const normalizedVoiceRms = voiceStats.activeRms * autoVoiceGain;
 
-  // Target BGM base RMS (during intro/outro/pauses) = 24% of normalized voice RMS (~ -12.4 dB below voice)
-  const targetBgmBaseRms = normalizedVoiceRms * 0.24;
+  // Target BGM base RMS (during intro/outro/pauses) = 48% of normalized voice RMS (~ -6.3 dB below voice)
+  const targetBgmBaseRms = normalizedVoiceRms * 0.48;
   const autoBgmBaseGain = Math.min(
-    1.2,
+    1.8,
     targetBgmBaseRms / bgmStats.activeRms
   );
 
-  // During active speech, duck BGM by an additional 9.5 dB (so BGM sits ~ -22 dB below voice while talking!)
-  const duckDb = options.duckingDepthDb ?? 9.5;
-  const duckLinearRatio = Math.pow(10, -Math.abs(duckDb) / 20); // ~0.335
+  // During active speech, duck BGM by a gentle 5.5 dB (so BGM sits at ~25% of voice amplitude while talking: clearly audible and warm, without overpowering speech)
+  const duckDb = options.duckingDepthDb ?? 5.5;
+  const duckLinearRatio = Math.pow(10, -Math.abs(duckDb) / 20); // ~0.531
 
   // 3. Compute lookahead speech envelope (40ms lookahead so BGM ducks *before* the consonant hits)
   const lookaheadFrames = Math.floor(0.04 * sampleRate);
