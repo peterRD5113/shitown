@@ -28,9 +28,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "喫茶 聲・KISSA VOX｜有聲祝福配樂與 7 吋黑膠 QR 壓製所",
+  title: "蒔町・拾光事務所 SHI TOWN｜03 港町留聲計畫・聲音明信片",
   description:
-    "錄製一段溫暖口白，透過 AI 語氣感知搭配純背景音樂或環境雨聲，自動完成廣播級人聲閃避混音並封存為可掃碼聆聽的 7 吋黑膠 QR 有聲小卡。",
+    "以咖啡為媒，串起地方、人才與永續的文化再生計畫。讓值得記住的聲音，成為可以收藏的記憶。",
 };
 
 export default function RootLayout({

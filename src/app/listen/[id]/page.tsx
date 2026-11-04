@@ -8,8 +8,6 @@ import {
   Pause,
   Download,
   ArrowLeft,
-  Monitor,
-  Smartphone,
 } from "lucide-react";
 import { synthesizeOfflineBackingBuffer } from "@/lib/presets";
 import { renderAutoDuckedMix } from "@/lib/audio-mixer";
@@ -61,9 +59,8 @@ async function createFallbackVoiceBuffer(sampleRate = 44100): Promise<AudioBuffe
 
 export default function ListenShiTownPostcardPage() {
   const params = useParams<{ id: string }>();
-  const id = params?.id || "kissa-042";
+  const id = params?.id || "shitown-001";
 
-  const [viewportMode, setViewportMode] = useState<"desktop" | "mobile">("desktop");
   const [record, setRecord] = useState<KeepsakeRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -73,15 +70,6 @@ export default function ListenShiTownPostcardPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    try {
-      const search = new URLSearchParams(window.location.search);
-      if (search.get("viewport") === "mobile") {
-        setViewportMode("mobile");
-      }
-    } catch {
-      // Ignore
-    }
-
     let cancelled = false;
     (async () => {
       try {
@@ -309,42 +297,9 @@ export default function ListenShiTownPostcardPage() {
           <ArrowLeft size={15} strokeWidth={1.75} />
           <span>返回製作頁</span>
         </Link>
-
-        <div
-          className="viewport-toggle-group"
-          role="group"
-          aria-label="電腦版與手機版視角切換"
-        >
-          <button
-            type="button"
-            className={`viewport-toggle-btn ${
-              viewportMode === "desktop" ? "active" : ""
-            }`}
-            onClick={() => setViewportMode("desktop")}
-          >
-            <Monitor size={14} strokeWidth={1.75} />
-            <span>電腦版</span>
-          </button>
-          <button
-            type="button"
-            className={`viewport-toggle-btn ${
-              viewportMode === "mobile" ? "active" : ""
-            }`}
-            onClick={() => setViewportMode("mobile")}
-          >
-            <Smartphone size={14} strokeWidth={1.75} />
-            <span>手機版 (390px)</span>
-          </button>
-        </div>
       </div>
 
-      {viewportMode === "mobile" ? (
-        <div className="mobile-preview-backdrop">
-          <div className="mobile-preview-frame">{listenerBody}</div>
-        </div>
-      ) : (
-        listenerBody
-      )}
+      {listenerBody}
     </div>
   );
 }

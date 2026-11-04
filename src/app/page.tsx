@@ -11,8 +11,6 @@ import {
   QrCode,
   Volume2,
   ExternalLink,
-  Monitor,
-  Smartphone,
   ArrowRight,
 } from "lucide-react";
 import { synthesizeOfflineBackingBuffer } from "@/lib/presets";
@@ -21,8 +19,6 @@ import {
   downloadStandaloneQrPng,
   downloadVinylSleeveCardPng,
 } from "@/lib/export-card-png";
-
-type ViewportMode = "desktop" | "mobile";
 
 interface RecommendedBgmTrack {
   id: string;
@@ -91,8 +87,6 @@ async function createDemoVoiceBuffer(sampleRate = 44100): Promise<AudioBuffer> {
 }
 
 export default function ShiTownVoicePostcardPage() {
-  const [viewportMode, setViewportMode] = useState<ViewportMode>("desktop");
-
   // Strict Step-by-Step Progression (1 -> 2 -> 3 -> 4)
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
@@ -111,6 +105,7 @@ export default function ShiTownVoicePostcardPage() {
   );
   const [detectedTone, setDetectedTone] = useState<string>("");
   const [isGeneratingBgmOptions, setIsGeneratingBgmOptions] = useState(false);
+  const [aiStageMessage, setAiStageMessage] = useState<string>("");
   const [bgmBuffers, setBgmBuffers] = useState<Record<string, AudioBuffer>>({});
   const [bgmBlobs, setBgmBlobs] = useState<Record<string, Blob>>({});
   const [selectedBgmId, setSelectedBgmId] = useState<string>("bgm-a");
@@ -124,7 +119,7 @@ export default function ShiTownVoicePostcardPage() {
 
   // Step 04: QR Code Generation & Download
   const [isGeneratingQr, setIsGeneratingQr] = useState(false);
-  const [keepsakeId, setKeepsakeId] = useState<string>("kissa-042");
+  const [keepsakeId, setKeepsakeId] = useState<string>("shitown-001");
   const [createdAtDate, setCreatedAtDate] = useState<string>("2026.11.04");
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [listenUrl, setListenUrl] = useState<string>("");
@@ -140,9 +135,6 @@ export default function ShiTownVoicePostcardPage() {
   useEffect(() => {
     try {
       const search = new URLSearchParams(window.location.search);
-      if (search.get("viewport") === "mobile") {
-        setViewportMode("mobile");
-      }
       const stepParam = Number(search.get("step"));
       if (stepParam === 1 || stepParam === 2 || stepParam === 3 || stepParam === 4) {
         setCurrentStep(stepParam);
@@ -321,6 +313,7 @@ export default function ShiTownVoicePostcardPage() {
     stopAnyPlayback();
     setErrorMessage(null);
     setIsGeneratingBgmOptions(true);
+    setAiStageMessage("1/2 正在聆聽語氣與構思配樂 Prompt...");
 
     try {
       // Stage 1: Call /api/analyze-voice so Gemini 2.5 Flash listens to the voice tone & writes 2 tailored prompts
@@ -350,6 +343,7 @@ export default function ShiTownVoicePostcardPage() {
       }
 
       // Stage 2: Generate the 2 BGM tracks from the prompts via backend Fal.ai API
+      setAiStageMessage("2/2 正在透過 AI 生成兩首背景音樂...");
       const targetLen = Math.max(14, voiceDuration + 4);
       const newBuffers: Record<string, AudioBuffer> = {};
       const newBlobs: Record<string, Blob> = {};
@@ -393,6 +387,7 @@ export default function ShiTownVoicePostcardPage() {
       setErrorMessage("準備背景音樂時發生錯誤，請再試一次。");
     } finally {
       setIsGeneratingBgmOptions(false);
+      setAiStageMessage("");
     }
   };
 
@@ -639,7 +634,7 @@ export default function ShiTownVoicePostcardPage() {
                 >
                   <span>
                     {isGeneratingBgmOptions
-                      ? "AI 正在配樂中..."
+                      ? aiStageMessage || "AI 正在配樂中..."
                       : "確認送出，交給 AI 配樂"}
                   </span>
                   <ArrowRight size={16} strokeWidth={1.75} />
@@ -1025,51 +1020,5 @@ export default function ShiTownVoicePostcardPage() {
     </main>
   );
 
-  return (
-    <div>
-      {/* Discreet Top Utility Bar */}
-      <div className="utility-topbar">
-        <span className="utility-brand-note">
-          蒔町・拾光事務所｜03 港町留聲計畫
-        </span>
-
-        <div className="utility-actions">
-          <div
-            className="viewport-toggle-group"
-            role="group"
-            aria-label="電腦版與手機版視角切換"
-          >
-            <button
-              type="button"
-              className={`viewport-toggle-btn ${
-                viewportMode === "desktop" ? "active" : ""
-              }`}
-              onClick={() => setViewportMode("desktop")}
-            >
-              <Monitor size={14} strokeWidth={1.75} />
-              <span>電腦版</span>
-            </button>
-            <button
-              type="button"
-              className={`viewport-toggle-btn ${
-                viewportMode === "mobile" ? "active" : ""
-              }`}
-              onClick={() => setViewportMode("mobile")}
-            >
-              <Smartphone size={14} strokeWidth={1.75} />
-              <span>手機版 (390px)</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {viewportMode === "mobile" ? (
-        <div className="mobile-preview-backdrop">
-          <div className="mobile-preview-frame">{studioBody}</div>
-        </div>
-      ) : (
-        studioBody
-      )}
-    </div>
-  );
+  return studioBody;
 }

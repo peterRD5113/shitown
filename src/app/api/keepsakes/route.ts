@@ -14,7 +14,7 @@ export interface KeepsakeRecord {
 }
 
 const DEFAULT_SAMPLE_RECORD: KeepsakeRecord = {
-  id: "kissa-042",
+  id: "shitown-001",
   recipientTitle: "港町留聲・私人聲音明信片",
   senderName: "蒔町・拾光事務所",
   transcript: "讓值得記住的聲音，成為可以收藏的記憶。",
@@ -35,7 +35,10 @@ declare global {
 
 function getMemoryRecords(): Record<string, KeepsakeRecord> {
   if (!globalThis.__SHITOWN_RECORDS__) {
-    globalThis.__SHITOWN_RECORDS__ = { "kissa-042": DEFAULT_SAMPLE_RECORD };
+    globalThis.__SHITOWN_RECORDS__ = {
+      "shitown-001": DEFAULT_SAMPLE_RECORD,
+      "kissa-042": { ...DEFAULT_SAMPLE_RECORD, id: "kissa-042" },
+    };
   }
   return globalThis.__SHITOWN_RECORDS__;
 }
@@ -107,7 +110,7 @@ export async function POST(req: NextRequest) {
     const durationSeconds = Number(formData.get("durationSeconds") || 14);
 
     const shortCode = Math.random().toString(36).substring(2, 7);
-    const id = `kissa-${shortCode}`;
+    const id = `shitown-${shortCode}`;
     let audioUrl: string | null = null;
 
     if (audioFile) {
