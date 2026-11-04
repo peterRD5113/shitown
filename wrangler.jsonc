@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "main": ".open-next/worker.js",
-  "name": "shitown",
+  "name": "voice",
   "compatibility_date": "2025-03-25",
   "compatibility_flags": [
     "nodejs_compat"
@@ -13,7 +13,7 @@
   "services": [
     {
       "binding": "WORKER_SELF_REFERENCE",
-      "service": "shitown"
+      "service": "voice"
     }
   ],
   "kv_namespaces": [
