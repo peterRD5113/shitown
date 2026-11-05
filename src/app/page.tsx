@@ -13,6 +13,8 @@ import {
   ExternalLink,
   ArrowRight,
   ChevronDown,
+  Music,
+  X,
 } from "lucide-react";
 import { synthesizeOfflineBackingBuffer } from "@/lib/presets";
 import { renderAutoDuckedMix, audioBufferToWavBlob } from "@/lib/audio-mixer";
@@ -87,6 +89,15 @@ async function createDemoVoiceBuffer(sampleRate = 44100): Promise<AudioBuffer> {
   return buffer;
 }
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 export default function ShiTownVoicePostcardPage() {
   // Currently open accordion panel (any step 1..4 can be freely opened at any time!)
   const [openStep, setOpenStep] = useState<1 | 2 | 3 | 4 | null>(1);
@@ -104,6 +115,12 @@ export default function ShiTownVoicePostcardPage() {
   const [voiceDuration, setVoiceDuration] = useState<number>(0);
   const [hasRecordedCustomVoice, setHasRecordedCustomVoice] = useState(false);
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+
+  // Step 01 (Optional): Uploaded Reference Music for Approach A + B
+  const [referenceFileName, setReferenceFileName] = useState<string>("");
+  const [referenceClipBlob, setReferenceClipBlob] = useState<Blob | null>(null);
+  const [referenceDataUrl, setReferenceDataUrl] = useState<string>("");
+  const [isPlayingReference, setIsPlayingReference] = useState(false);
 
   // Step 02: AI BGM Recommendations (Pick 1 of 2)
   const [bgmOptions, setBgmOptions] = useState<RecommendedBgmTrack[]>(
@@ -138,6 +155,7 @@ export default function ShiTownVoicePostcardPage() {
   const recordedChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const activeAudioElRef = useRef<HTMLAudioElement | null>(null);
+  const refAudioInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let stepParam = 1;
@@ -237,6 +255,7 @@ export default function ShiTownVoicePostcardPage() {
       activeAudioElRef.current = null;
     }
     setIsPlayingVoice(false);
+    setIsPlayingReference(false);
     setPlayingBgmId(null);
     setIsPlayingMix(false);
   };
@@ -273,6 +292,51 @@ export default function ShiTownVoicePostcardPage() {
     } finally {
       await audioCtx.close();
     }
+  };
+
+  // Extract a compact 15-second 22.05kHz mono WAV clip from an uploaded reference audio file
+  const handleReferenceFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    stopAnyPlayback();
+    setErrorMessage(null);
+
+    try {
+      const decoded = await decodeBlobToAudioBuffer(file);
+      const targetSr = 22050;
+      const maxClipSec = Math.min(15, decoded.duration);
+      // If the song is longer than 20s, skip the first 10% (up to 8s) so we capture the main musical groove rather than silent intro
+      const startOffsetSec =
+        decoded.duration > 20 ? Math.min(8, decoded.duration * 0.1) : 0;
+      const frameCount = Math.max(1, Math.ceil(maxClipSec * targetSr));
+
+      const offlineCtx = new OfflineAudioContext(1, frameCount, targetSr);
+      const src = offlineCtx.createBufferSource();
+      src.buffer = decoded;
+      src.connect(offlineCtx.destination);
+      src.start(0, startOffsetSec, maxClipSec);
+
+      const renderedClip = await offlineCtx.startRendering();
+      const clipWavBlob = audioBufferToWavBlob(renderedClip);
+      const clipDataUrl = await blobToDataUrl(clipWavBlob);
+
+      setReferenceFileName(file.name);
+      setReferenceClipBlob(clipWavBlob);
+      setReferenceDataUrl(clipDataUrl);
+    } catch {
+      setErrorMessage("無法讀取這份參考音檔，請確認檔案為 MP3、WAV 或 M4A 格式。");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const handleClearReferenceAudio = () => {
+    if (isPlayingReference) stopAnyPlayback();
+    setReferenceFileName("");
+    setReferenceClipBlob(null);
+    setReferenceDataUrl("");
   };
 
   // STEP 01: Start / Stop Microphone Recording
@@ -314,7 +378,7 @@ export default function ShiTownVoicePostcardPage() {
       }, 1000);
     } catch {
       setErrorMessage(
-        "未偵測到麥克風權限。您可允許瀏覽器使用麥克風，或直接按「確認送出」使用範例語音體驗。"
+        "未偵測到麥克風權限。請允許瀏覽器使用麥克風後再開始錄音。"
       );
     }
   };
@@ -333,20 +397,31 @@ export default function ShiTownVoicePostcardPage() {
     setIsRecording(false);
   };
 
-  // STEP 01 -> STEP 02: Confirm Voice -> Stage 1 (Gemini Audio Analysis writes 2 Prompts) -> Stage 2 (Generate 2 BGM Tracks)
+  // STEP 01 -> STEP 02: Confirm Voice -> Stage 1 (Approach A: Gemini analyzes voice + optional reference audio) -> Stage 2 (Approach B: Fal.ai generates 2 BGM Tracks)
   const handleConfirmStep1 = async () => {
     if (!voiceBuffer || !voiceBlob) return;
     stopAnyPlayback();
     setErrorMessage(null);
     setIsGeneratingBgmOptions(true);
-    setAiStageMessage("1/2 正在聆聽語氣與構思配樂...");
+    setAiStageMessage(
+      referenceClipBlob
+        ? "1/2 AI 正在分析您的聲音與參考音樂曲風..."
+        : "1/2 正在聆聽語氣與構思配樂..."
+    );
 
     try {
-      // Stage 1: Call /api/analyze-voice so Gemini 2.5 Flash listens to the voice tone & writes 2 tailored prompts
+      // Stage 1 (Approach A): Call /api/analyze-voice so Gemini 2.5 Flash listens to voice + optional reference music
       let activeRecommendations = TWO_AI_BGM_RECOMMENDATIONS;
       try {
         const analysisForm = new FormData();
         analysisForm.append("audio", voiceBlob, "voice.wav");
+        if (referenceClipBlob) {
+          analysisForm.append(
+            "referenceAudio",
+            referenceClipBlob,
+            "reference.wav"
+          );
+        }
         const analysisRes = await fetch("/api/analyze-voice", {
           method: "POST",
           body: analysisForm,
@@ -368,13 +443,18 @@ export default function ShiTownVoicePostcardPage() {
         // Fallback to default 2 recommendations if analysis fails
       }
 
-      // Stage 2: Generate the 2 BGM tracks from the prompts via backend Fal.ai API
-      setAiStageMessage("2/2 正在透過 AI 生成兩首背景音樂...");
+      // Stage 2 (Approach B): Generate the 2 BGM tracks via Fal.ai (with Audio-to-Audio reference conditioning when referenceDataUrl is present)
+      setAiStageMessage(
+        referenceDataUrl
+          ? "2/2 正在依參考音樂與語調生成兩首配樂..."
+          : "2/2 正在透過 AI 生成兩首背景音樂..."
+      );
       const targetLen = Math.max(14, voiceDuration + 4);
       const newBuffers: Record<string, AudioBuffer> = {};
       const newBlobs: Record<string, Blob> = {};
 
-      for (const rec of activeRecommendations) {
+      for (let idx = 0; idx < activeRecommendations.length; idx++) {
+        const rec = activeRecommendations[idx];
         try {
           const res = await fetch("/api/generate-bgm", {
             method: "POST",
@@ -385,6 +465,8 @@ export default function ShiTownVoicePostcardPage() {
               mode: rec.mode,
               durationSeconds: targetLen,
               falModel: "fal-ai/stable-audio",
+              referenceAudioDataUrl: referenceDataUrl || undefined,
+              referenceStrength: idx === 0 ? 0.72 : 0.82,
             }),
           });
           if (res.ok) {
@@ -429,9 +511,6 @@ export default function ShiTownVoicePostcardPage() {
 
     try {
       const result = await renderAutoDuckedMix(voiceBuffer, chosenBuffer, {
-        voiceGain: 1.0,
-        bgmGain: 0.34,
-        duckingDepthDb: 9,
         introSeconds: 1.5,
         outroSeconds: 2.5,
       });
@@ -567,7 +646,7 @@ export default function ShiTownVoicePostcardPage() {
 
       {/* 4-Step Free Accordion Stack (Any step can be clicked & opened at any time!) */}
       <div className="step-stack">
-        {/* ================= STEP 01: RECORD VOICE ================= */}
+        {/* ================= STEP 01: RECORD VOICE & OPTIONAL REFERENCE AUDIO ================= */}
         <section
           className={`step-panel ${openStep === 1 ? "active" : ""}`}
           aria-label="第一步：錄下聲音"
@@ -600,6 +679,88 @@ export default function ShiTownVoicePostcardPage() {
               <p className="step-instruction">
                 請點擊「開始錄音」錄下您想說的話，錄完後可先試聽，確認無誤後點選「確認送出」。
               </p>
+
+              {/* Optional Reference Music Upload Row (Approach A + B) */}
+              <div className="reference-upload-row">
+                <div className="reference-upload-info">
+                  <div className="reference-upload-title">
+                    參考音樂（選填）
+                  </div>
+                  <div className="reference-upload-desc">
+                    {referenceFileName
+                      ? `已載入：${referenceFileName}（AI 將依此曲風與音色生成配樂）`
+                      : "若有喜歡的音樂可上傳，AI 會分析該曲風與音色為您生成相似配樂"}
+                  </div>
+                </div>
+
+                <div className="reference-upload-actions">
+                  <input
+                    ref={refAudioInputRef}
+                    type="file"
+                    accept="audio/*"
+                    onChange={handleReferenceFileChange}
+                    style={{ display: "none" }}
+                  />
+
+                  {!referenceClipBlob ? (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => refAudioInputRef.current?.click()}
+                    >
+                      <Music size={15} strokeWidth={1.75} />
+                      <span>上傳參考音檔</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() =>
+                          isPlayingReference
+                            ? stopAnyPlayback()
+                            : playBlob(
+                                referenceClipBlob,
+                                () => setIsPlayingReference(true),
+                                () => setIsPlayingReference(false)
+                              )
+                        }
+                      >
+                        {isPlayingReference ? (
+                          <>
+                            <Pause size={14} strokeWidth={1.75} />
+                            <span>停止</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play size={14} strokeWidth={1.75} />
+                            <span>試聽參考</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => refAudioInputRef.current?.click()}
+                      >
+                        <Music size={14} strokeWidth={1.75} />
+                        <span>更換</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={handleClearReferenceAudio}
+                        aria-label="移除參考音檔"
+                      >
+                        <X size={14} strokeWidth={1.75} />
+                        <span>移除</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
 
               <div className="step-action-row">
                 <div className="step-action-left">
@@ -719,7 +880,7 @@ export default function ShiTownVoicePostcardPage() {
                 <>
                   <p className="step-instruction">
                     {detectedTone
-                      ? `AI 聽取語音後偵測語調為「${detectedTone}」，為您量身生成以下兩首配樂（您可隨時回來試聽，不會洗掉已完成的合成）：`
+                      ? `AI 分析結果為「${detectedTone}」，為您量身生成以下兩首配樂（您可隨時回來試聽，不會洗掉已完成的合成）：`
                       : "AI 已為您的聲音挑選兩首背景音樂，可先點擊右側「試聽」，選好後點選下方按鈕合成。"}
                   </p>
 

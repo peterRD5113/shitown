@@ -4,21 +4,25 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
-      provider,
+      provider = "fal",
       prompt,
       mode = "music",
       durationSeconds = 20,
       elevenlabsApiKey,
       falApiKey,
       falModel = "fal-ai/stable-audio",
+      referenceAudioDataUrl,
+      referenceStrength = 0.75,
     } = body as {
-      provider: "elevenlabs" | "fal";
+      provider?: "elevenlabs" | "fal";
       prompt: string;
       mode?: "music" | "ambience";
       durationSeconds?: number;
       elevenlabsApiKey?: string;
       falApiKey?: string;
       falModel?: string;
+      referenceAudioDataUrl?: string;
+      referenceStrength?: number;
     };
 
     if (!prompt || !prompt.trim()) {
@@ -33,17 +37,16 @@ export async function POST(req: NextRequest) {
         elevenlabsApiKey?.trim() || process.env.ELEVENLABS_API_KEY || "";
       if (!apiKey) {
         return NextResponse.json(
-          {
-            error:
-              "尚未設定 ElevenLabs API Key。請點擊右上角「API 金鑰設定」填入，或切換至「內建離線範例音」直接體驗。",
-          },
+          { error: "尚未設定 ElevenLabs API Key。" },
           { status: 401 }
         );
       }
 
       if (mode === "ambience") {
-        // ElevenLabs Sound Generation API with seamless loop
-        const safeSeconds = Math.max(5, Math.min(30, Math.round(durationSeconds)));
+        const safeSeconds = Math.max(
+          5,
+          Math.min(30, Math.round(durationSeconds))
+        );
         const res = await fetch(
           "https://api.elevenlabs.io/v1/sound-generation",
           {
@@ -80,7 +83,6 @@ export async function POST(req: NextRequest) {
           },
         });
       } else {
-        // ElevenLabs Music API with force_instrumental: true
         const lengthMs = Math.max(
           10000,
           Math.min(180000, Math.round((durationSeconds + 4) * 1000))
@@ -124,17 +126,66 @@ export async function POST(req: NextRequest) {
       const apiKey = falApiKey?.trim() || process.env.FAL_KEY || "";
       if (!apiKey) {
         return NextResponse.json(
-          {
-            error:
-              "尚未設定 Fal.ai API Key (FAL_KEY)。請點擊右上角「API 金鑰設定」填入，或切換至「內建離線範例音」直接體驗。",
-          },
+          { error: "尚未設定 Fal.ai API Key (FAL_KEY)。" },
           { status: 401 }
         );
       }
 
-      const endpoint = falModel || "fal-ai/stable-audio";
-      const safeSeconds = Math.max(10, Math.min(45, Math.round(durationSeconds + 4)));
+      const safeSeconds = Math.max(
+        10,
+        Math.min(45, Math.round(durationSeconds + 4))
+      );
 
+      // Approach B: If user uploaded a reference audio clip, run Stable Audio 2.5 Audio-to-Audio first!
+      if (referenceAudioDataUrl && referenceAudioDataUrl.startsWith("data:audio/")) {
+        try {
+          const a2aRes = await fetch(
+            "https://fal.run/fal-ai/stable-audio-25/audio-to-audio",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Key ${apiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                prompt,
+                audio_url: referenceAudioDataUrl,
+                strength: referenceStrength,
+                total_seconds: safeSeconds,
+              }),
+            }
+          );
+
+          if (a2aRes.ok) {
+            const a2aData = await a2aRes.json();
+            const a2aUrl =
+              a2aData?.audio?.url ||
+              a2aData?.audio_file?.url ||
+              a2aData?.audio_url ||
+              null;
+            if (a2aUrl) {
+              const audioFetch = await fetch(a2aUrl);
+              if (audioFetch.ok) {
+                const audioBuffer = await audioFetch.arrayBuffer();
+                return new NextResponse(audioBuffer, {
+                  status: 200,
+                  headers: {
+                    "Content-Type":
+                      audioFetch.headers.get("content-type") || "audio/wav",
+                    "X-Generator-Provider":
+                      "fal:fal-ai/stable-audio-25/audio-to-audio",
+                  },
+                });
+              }
+            }
+          }
+        } catch {
+          // If audio-to-audio endpoint times out or fails, gracefully fall through to text-to-audio below
+        }
+      }
+
+      // Standard Text-to-Audio generation (using Gemini's detailed prompt)
+      const endpoint = falModel || "fal-ai/stable-audio";
       const falRes = await fetch(`https://fal.run/${endpoint}`, {
         method: "POST",
         headers: {
