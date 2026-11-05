@@ -320,74 +320,49 @@ textarea {
   margin-left: 6px;
 }
 
-.script-refresh-btn {
-  display: inline-flex;
+.script-thought-row {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--ink-primary);
-  background: transparent;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.script-thought-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
   border: 1px solid var(--border-medium);
-  border-radius: 5px;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: background-color 150ms ease, border-color 150ms ease;
+  background-color: #FFFFFF;
+  font-size: 0.88rem;
+  color: var(--ink-primary);
 }
 
-.script-refresh-btn:hover:not(:disabled) {
-  background-color: var(--bg-muted);
-  border-color: var(--accent-coffee);
-}
-
-.script-refresh-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.script-thought-input::placeholder {
+  color: #9A8470;
 }
 
 .script-teleprompter-box {
   width: 100%;
-  resize: vertical;
-  min-height: 76px;
-  padding: 12px 14px;
+  resize: none;
+  overflow: hidden;
+  min-height: 112px;
+  padding: 14px 16px;
   background-color: var(--bg-paper);
   border: 1px solid var(--border-light);
   border-left: 3px solid var(--accent-coffee);
   border-radius: 6px;
   font-family: var(--font-serif), "Shippori Mincho", "Noto Serif TC", serif;
-  font-size: 1.02rem;
-  line-height: 1.68;
+  font-size: 1.06rem;
+  line-height: 1.75;
   color: var(--ink-primary);
-  margin-bottom: 10px;
+  display: block;
 }
 
 .script-teleprompter-box:focus {
   outline: none;
   border-color: var(--accent-coffee);
   background-color: #FFFDFB;
-}
-
-.script-thought-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.script-thought-input {
-  flex: 1;
-  min-width: 0;
-  padding: 9px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border-medium);
-  background-color: #FFFFFF;
-  font-size: 0.86rem;
-  color: var(--ink-primary);
-}
-
-.script-thought-input::placeholder {
-  color: #9A8470;
 }
 
 /* Step 01: Optional Reference Music Upload Row (Hairline divider, zero nested card box) */

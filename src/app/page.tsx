@@ -122,6 +122,9 @@ export default function ShiTownVoicePostcardPage() {
     "今天在港邊聞著咖啡香，突然想起好久不見的你。希望收到這張聲音明信片的時候，你剛好也有一個安靜、放鬆的午後。"
   );
   const [userThought, setUserThought] = useState<string>("");
+  const [lastGeneratedThought, setLastGeneratedThought] = useState<
+    string | null
+  >(null);
   const [isGeneratingScript, setIsGeneratingScript] = useState<boolean>(false);
 
   // Step 01 (Optional): Uploaded Reference Music for Approach A + B
@@ -164,6 +167,15 @@ export default function ShiTownVoicePostcardPage() {
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const activeAudioElRef = useRef<HTMLAudioElement | null>(null);
   const refAudioInputRef = useRef<HTMLInputElement | null>(null);
+  const scriptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Auto-expand teleprompter textarea height so it never shows a vertical scrollbar
+  useEffect(() => {
+    const el = scriptTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.max(112, el.scrollHeight + 4)}px`;
+  }, [scriptText, openStep]);
 
   useEffect(() => {
     let stepParam = 1;
@@ -405,7 +417,8 @@ export default function ShiTownVoicePostcardPage() {
     setIsRecording(false);
   };
 
-  const handleGenerateScript = async (mode: "random" | "custom") => {
+  const handleGenerateScript = async () => {
+    const trimmedThought = userThought.trim();
     setIsGeneratingScript(true);
     setErrorMessage(null);
     try {
@@ -413,7 +426,7 @@ export default function ShiTownVoicePostcardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          thought: mode === "custom" ? userThought.trim() : "",
+          thought: trimmedThought,
           previousScript: scriptText,
         }),
       });
@@ -421,6 +434,9 @@ export default function ShiTownVoicePostcardPage() {
         const data = await res.json();
         if (typeof data.script === "string" && data.script.trim()) {
           setScriptText(data.script.trim());
+        }
+        if (trimmedThought) {
+          setLastGeneratedThought(trimmedThought);
         }
       }
     } catch {
@@ -719,65 +735,55 @@ export default function ShiTownVoicePostcardPage() {
                   <div>
                     <span className="script-helper-title">留聲讀稿參考</span>
                     <span className="script-helper-sub">
-                      （可照著唸，也可直接點擊修改文字）
+                      （可輸入想法生成，或直接照著下方文字朗讀、點擊修改）
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    className="script-refresh-btn"
-                    onClick={() => handleGenerateScript("random")}
-                    disabled={isGeneratingScript}
-                  >
-                    <RefreshCw size={13} strokeWidth={1.8} />
-                    <span>
-                      {isGeneratingScript && !userThought.trim()
-                        ? "構思中..."
-                        : "換一段靈感"}
-                    </span>
-                  </button>
                 </div>
-
-                <textarea
-                  className="script-teleprompter-box"
-                  rows={2}
-                  value={scriptText}
-                  onChange={(e) => setScriptText(e.target.value)}
-                  aria-label="留聲讀稿參考文字"
-                />
 
                 <div className="script-thought-row">
                   <input
                     type="text"
                     className="script-thought-input"
-                    placeholder="不知道怎麼開口？寫下大致想法（例：祝阿哲生日快樂、謝謝媽媽的照顧）..."
+                    placeholder="寫下簡單的想法（例：祝阿哲生日快樂、謝謝媽媽的照顧）..."
                     value={userThought}
                     onChange={(e) => setUserThought(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && userThought.trim()) {
+                      if (e.key === "Enter") {
                         e.preventDefault();
-                        handleGenerateScript("custom");
+                        handleGenerateScript();
                       }
                     }}
                   />
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() =>
-                      handleGenerateScript(
-                        userThought.trim() ? "custom" : "random"
-                      )
-                    }
+                    onClick={handleGenerateScript}
                     disabled={isGeneratingScript}
                   >
+                    {(!userThought.trim() ||
+                      lastGeneratedThought === userThought.trim()) && (
+                      <RefreshCw size={14} strokeWidth={1.8} />
+                    )}
                     <span>
                       {isGeneratingScript
-                        ? "正在撰寫..."
-                        : userThought.trim()
-                        ? "撰寫留聲短句"
-                        : "隨機生成短句"}
+                        ? "生成中..."
+                        : !userThought.trim()
+                        ? "隨機生成語句"
+                        : lastGeneratedThought === userThought.trim()
+                        ? "換一段語句"
+                        : "生成語句"}
                     </span>
                   </button>
                 </div>
+
+                <textarea
+                  ref={scriptTextareaRef}
+                  className="script-teleprompter-box"
+                  rows={3}
+                  value={scriptText}
+                  onChange={(e) => setScriptText(e.target.value)}
+                  aria-label="留聲讀稿參考文字"
+                />
               </div>
 
               {/* Optional Reference Music Upload Row (Approach A + B) */}
