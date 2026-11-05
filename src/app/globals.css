@@ -293,6 +293,103 @@ textarea {
   flex-wrap: wrap;
 }
 
+/* Step 01: Teleprompter & Script Inspiration Section */
+.script-helper-section {
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--border-light);
+}
+
+.script-helper-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.script-helper-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ink-primary);
+}
+
+.script-helper-sub {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--ink-secondary);
+  margin-left: 6px;
+}
+
+.script-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-primary);
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.script-refresh-btn:hover:not(:disabled) {
+  background-color: var(--bg-muted);
+  border-color: var(--accent-coffee);
+}
+
+.script-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.script-teleprompter-box {
+  width: 100%;
+  resize: vertical;
+  min-height: 76px;
+  padding: 12px 14px;
+  background-color: var(--bg-paper);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--accent-coffee);
+  border-radius: 6px;
+  font-family: var(--font-serif), "Shippori Mincho", "Noto Serif TC", serif;
+  font-size: 1.02rem;
+  line-height: 1.68;
+  color: var(--ink-primary);
+  margin-bottom: 10px;
+}
+
+.script-teleprompter-box:focus {
+  outline: none;
+  border-color: var(--accent-coffee);
+  background-color: #FFFDFB;
+}
+
+.script-thought-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.script-thought-input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-medium);
+  background-color: #FFFFFF;
+  font-size: 0.86rem;
+  color: var(--ink-primary);
+}
+
+.script-thought-input::placeholder {
+  color: #9A8470;
+}
+
 /* Step 01: Optional Reference Music Upload Row (Hairline divider, zero nested card box) */
 .reference-upload-row {
   display: flex;
@@ -300,7 +397,7 @@ textarea {
   justify-content: space-between;
   gap: 14px;
   padding: 14px 0;
-  margin-top: 16px;
+  margin-top: 0;
   margin-bottom: 16px;
   border-top: 1px solid var(--border-light);
   border-bottom: 1px solid var(--border-light);
@@ -566,6 +663,25 @@ textarea {
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
+  }
+
+  .script-helper-sub {
+    display: none;
+  }
+
+  .script-teleprompter-box {
+    font-size: 0.96rem;
+    padding: 10px 12px;
+  }
+
+  .script-thought-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .script-thought-row > .btn-secondary {
+    width: 100%;
+    min-height: 42px;
   }
 
   .reference-upload-actions {

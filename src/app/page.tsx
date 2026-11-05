@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Music,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { synthesizeOfflineBackingBuffer } from "@/lib/presets";
 import { renderAutoDuckedMix, audioBufferToWavBlob } from "@/lib/audio-mixer";
@@ -115,6 +116,13 @@ export default function ShiTownVoicePostcardPage() {
   const [voiceDuration, setVoiceDuration] = useState<number>(0);
   const [hasRecordedCustomVoice, setHasRecordedCustomVoice] = useState(false);
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+
+  // Step 01: Teleprompter Script & Inspiration Helper
+  const [scriptText, setScriptText] = useState<string>(
+    "今天在港邊聞著咖啡香，突然想起好久不見的你。希望收到這張聲音明信片的時候，你剛好也有一個安靜、放鬆的午後。"
+  );
+  const [userThought, setUserThought] = useState<string>("");
+  const [isGeneratingScript, setIsGeneratingScript] = useState<boolean>(false);
 
   // Step 01 (Optional): Uploaded Reference Music for Approach A + B
   const [referenceFileName, setReferenceFileName] = useState<string>("");
@@ -395,6 +403,31 @@ export default function ShiTownVoicePostcardPage() {
       mediaRecorderRef.current.stop();
     }
     setIsRecording(false);
+  };
+
+  const handleGenerateScript = async (mode: "random" | "custom") => {
+    setIsGeneratingScript(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch("/api/generate-script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          thought: mode === "custom" ? userThought.trim() : "",
+          previousScript: scriptText,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.script === "string" && data.script.trim()) {
+          setScriptText(data.script.trim());
+        }
+      }
+    } catch {
+      // Keep current script if network error occurs
+    } finally {
+      setIsGeneratingScript(false);
+    }
   };
 
   // STEP 01 -> STEP 02: Confirm Voice -> Stage 1 (Approach A: Gemini analyzes voice + optional reference audio) -> Stage 2 (Approach B: Fal.ai generates 2 BGM Tracks)
@@ -679,6 +712,73 @@ export default function ShiTownVoicePostcardPage() {
               <p className="step-instruction">
                 請點擊「開始錄音」錄下您想說的話，錄完後可先試聽，確認無誤後點選「確認送出」。
               </p>
+
+              {/* Step 01: Teleprompter & Script Inspiration Section */}
+              <div className="script-helper-section">
+                <div className="script-helper-header">
+                  <div>
+                    <span className="script-helper-title">留聲讀稿參考</span>
+                    <span className="script-helper-sub">
+                      （可照著唸，也可直接點擊修改文字）
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="script-refresh-btn"
+                    onClick={() => handleGenerateScript("random")}
+                    disabled={isGeneratingScript}
+                  >
+                    <RefreshCw size={13} strokeWidth={1.8} />
+                    <span>
+                      {isGeneratingScript && !userThought.trim()
+                        ? "構思中..."
+                        : "換一段靈感"}
+                    </span>
+                  </button>
+                </div>
+
+                <textarea
+                  className="script-teleprompter-box"
+                  rows={2}
+                  value={scriptText}
+                  onChange={(e) => setScriptText(e.target.value)}
+                  aria-label="留聲讀稿參考文字"
+                />
+
+                <div className="script-thought-row">
+                  <input
+                    type="text"
+                    className="script-thought-input"
+                    placeholder="不知道怎麼開口？寫下大致想法（例：祝阿哲生日快樂、謝謝媽媽的照顧）..."
+                    value={userThought}
+                    onChange={(e) => setUserThought(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && userThought.trim()) {
+                        e.preventDefault();
+                        handleGenerateScript("custom");
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() =>
+                      handleGenerateScript(
+                        userThought.trim() ? "custom" : "random"
+                      )
+                    }
+                    disabled={isGeneratingScript}
+                  >
+                    <span>
+                      {isGeneratingScript
+                        ? "正在撰寫..."
+                        : userThought.trim()
+                        ? "撰寫留聲短句"
+                        : "隨機生成短句"}
+                    </span>
+                  </button>
+                </div>
+              </div>
 
               {/* Optional Reference Music Upload Row (Approach A + B) */}
               <div className="reference-upload-row">
