@@ -405,7 +405,7 @@ export default function ShiTownVoicePostcardPage() {
     setIsGeneratingBgmOptions(true);
     setAiStageMessage(
       referenceClipBlob
-        ? "1/2 AI 正在分析您的聲音與參考音樂曲風..."
+        ? "1/2 正在分析您的聲音與參考音樂曲風..."
         : "1/2 正在聆聽語氣與構思配樂..."
     );
 
@@ -447,7 +447,7 @@ export default function ShiTownVoicePostcardPage() {
       setAiStageMessage(
         referenceDataUrl
           ? "2/2 正在依參考音樂與語調生成兩首配樂..."
-          : "2/2 正在透過 AI 生成兩首背景音樂..."
+          : "2/2 正在為您譜寫兩首專屬背景音樂..."
       );
       const targetLen = Math.max(14, voiceDuration + 4);
       const newBuffers: Record<string, AudioBuffer> = {};
@@ -688,8 +688,8 @@ export default function ShiTownVoicePostcardPage() {
                   </div>
                   <div className="reference-upload-desc">
                     {referenceFileName
-                      ? `已載入：${referenceFileName}（AI 將依此曲風與音色生成配樂）`
-                      : "若有喜歡的音樂可上傳，AI 會分析該曲風與音色為您生成相似配樂"}
+                      ? `已載入：${referenceFileName}（將依此曲風與音色生成配樂）`
+                      : "若有喜歡的音樂可上傳，系統將依該曲風與音色為您生成相似配樂"}
                   </div>
                 </div>
 
@@ -827,8 +827,8 @@ export default function ShiTownVoicePostcardPage() {
                 >
                   <span>
                     {isGeneratingBgmOptions
-                      ? aiStageMessage || "AI 配樂生成中..."
-                      : "確認送出，交給 AI 配樂"}
+                      ? aiStageMessage || "專屬配樂生成中..."
+                      : "確認送出，生成專屬配樂"}
                   </span>
                   <ArrowRight size={16} strokeWidth={1.75} />
                 </button>
@@ -866,7 +866,7 @@ export default function ShiTownVoicePostcardPage() {
               {!hasSubmittedVoice ? (
                 <div className="step-empty-notice">
                   <span>
-                    請先在「01 錄下聲音」完成錄音並按下確認送出，AI 就會根據您的語調生成兩首專屬背景音樂。
+                    請先在「01 錄下聲音」完成錄音並按下確認送出，系統就會根據您的語調生成兩首專屬背景音樂。
                   </span>
                   <button
                     type="button"
@@ -880,14 +880,14 @@ export default function ShiTownVoicePostcardPage() {
                 <>
                   <p className="step-instruction">
                     {detectedTone
-                      ? `AI 分析結果為「${detectedTone}」，為您量身生成以下兩首配樂（您可隨時回來試聽，不會洗掉已完成的合成）：`
-                      : "AI 已為您的聲音挑選兩首背景音樂，可先點擊右側「試聽」，選好後點選下方按鈕合成。"}
+                      ? `根據您的聲音特質「${detectedTone}」，為您量身生成以下兩首配樂（您可隨時回來試聽，不會洗掉已完成的合成）：`
+                      : "已為您的聲音譜寫兩首背景音樂，可先點擊右側「試聽」，選好後點選下方按鈕合成。"}
                   </p>
 
                   <div
                     className="bgm-option-list"
                     role="radiogroup"
-                    aria-label="AI 推薦配樂選項"
+                    aria-label="推薦配樂選項"
                   >
                     {bgmOptions.map((track) => {
                       const isSelected = selectedBgmId === track.id;
