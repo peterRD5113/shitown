@@ -250,3 +250,112 @@ export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
 
   return new Blob([arrayBuffer], { type: "audio/wav" });
 }
+
+export type ReferencePlacementMode =
+  | "style"
+  | "extend-after"
+  | "extend-both"
+  | "extend-before";
+
+/**
+ * Places a reference clip at the start ("extend-after"), middle ("extend-both"),
+ * or end ("extend-before") of a backing track buffer with smooth equal-power crossfades.
+ */
+export async function composeReferencePlacementBuffer(
+  referenceBuffer: AudioBuffer,
+  extensionBedBuffer: AudioBuffer,
+  placement: ReferencePlacementMode,
+  targetDurationSec: number
+): Promise<AudioBuffer> {
+  if (placement === "style") {
+    return extensionBedBuffer;
+  }
+
+  const sampleRate = 44100;
+  const totalFrames = Math.max(1, Math.ceil(targetDurationSec * sampleRate));
+
+  // Resample referenceBuffer into 44.1kHz stereo
+  const maxRefSec = Math.min(
+    referenceBuffer.duration,
+    Math.max(3, targetDurationSec * 0.45)
+  );
+  const refFrames = Math.max(1, Math.floor(maxRefSec * sampleRate));
+  const refOffline = new OfflineAudioContext(2, refFrames, sampleRate);
+  const refSrc = refOffline.createBufferSource();
+  refSrc.buffer = referenceBuffer;
+  refSrc.connect(refOffline.destination);
+  refSrc.start(0, 0, maxRefSec);
+  const renderedRef = await refOffline.startRendering();
+
+  const refL = renderedRef.getChannelData(0);
+  const refR = renderedRef.getChannelData(1);
+
+  const bedL = extensionBedBuffer.getChannelData(0);
+  const bedR =
+    extensionBedBuffer.numberOfChannels > 1
+      ? extensionBedBuffer.getChannelData(1)
+      : bedL;
+  const bedRatio = extensionBedBuffer.sampleRate / sampleRate;
+
+  // Match RMS loudness between reference clip and extension bed
+  const refStats = analyzeAudioLoudness(refL, refR);
+  const bedStats = analyzeAudioLoudness(bedL, bedR);
+  const refScale = Math.min(
+    2.2,
+    Math.max(0.35, bedStats.activeRms / Math.max(0.01, refStats.activeRms))
+  );
+
+  let refStartFrame = 0;
+  if (placement === "extend-after") {
+    refStartFrame = 0;
+  } else if (placement === "extend-both") {
+    refStartFrame = Math.max(0, Math.floor((totalFrames - refFrames) / 2));
+  } else if (placement === "extend-before") {
+    refStartFrame = Math.max(0, totalFrames - refFrames);
+  }
+  const refEndFrame = Math.min(totalFrames, refStartFrame + refFrames);
+  const crossfadeFrames = Math.min(
+    Math.floor(0.45 * sampleRate),
+    Math.floor(refFrames * 0.25)
+  );
+
+  const outCtx = new OfflineAudioContext(2, totalFrames, sampleRate);
+  const outBuf = outCtx.createBuffer(2, totalFrames, sampleRate);
+  const outL = outBuf.getChannelData(0);
+  const outR = outBuf.getChannelData(1);
+
+  for (let i = 0; i < totalFrames; i++) {
+    const bedIdx = Math.floor(i * bedRatio) % extensionBedBuffer.length;
+    const bSampleL = bedL[bedIdx];
+    const bSampleR = bedR[bedIdx];
+
+    if (i >= refStartFrame && i < refEndFrame) {
+      const localIdx = i - refStartFrame;
+      const rSampleL = refL[localIdx] * refScale;
+      const rSampleR = refR[localIdx] * refScale;
+
+      // Compute equal-power crossfade weight (1 = pure reference, 0 = pure extension bed)
+      let refWeight = 1.0;
+      if (placement !== "extend-after" && localIdx < crossfadeFrames) {
+        const phase = localIdx / Math.max(1, crossfadeFrames);
+        refWeight = Math.sin(phase * 0.5 * Math.PI);
+      } else if (
+        placement !== "extend-before" &&
+        refEndFrame - i <= crossfadeFrames
+      ) {
+        const phase = (refEndFrame - i) / Math.max(1, crossfadeFrames);
+        refWeight = Math.sin(phase * 0.5 * Math.PI);
+      }
+
+      const bedWeight = Math.sqrt(Math.max(0, 1 - refWeight * refWeight));
+      outL[i] = rSampleL * refWeight + bSampleL * bedWeight;
+      outR[i] = rSampleR * refWeight + bSampleR * bedWeight;
+    } else {
+      outL[i] = bSampleL;
+      outR[i] = bSampleR;
+    }
+  }
+
+  return outBuf;
+}
+

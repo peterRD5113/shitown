@@ -23,6 +23,7 @@ interface KeepsakeRecord {
   durationSeconds: number;
   createdAt: string;
   audioUrl: string | null;
+  photoDataUrl?: string | null;
 }
 
 const SOUNDWAVE_HEIGHTS = [
@@ -67,21 +68,72 @@ export default function ListenShiTownPostcardPage() {
   const [progressPct, setProgressPct] = useState(0);
   const [currentTimeSec, setCurrentTimeSec] = useState(0);
   const [playableUrl, setPlayableUrl] = useState<string | null>(null);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioBytesRef = useRef<ArrayBuffer | null>(null);
+  const webAudioCtxRef = useRef<AudioContext | null>(null);
+  const webAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const webAudioRafRef = useRef<number | null>(null);
+
+  const stopWebAudioFallback = () => {
+    if (webAudioRafRef.current !== null) {
+      cancelAnimationFrame(webAudioRafRef.current);
+      webAudioRafRef.current = null;
+    }
+    if (webAudioSourceRef.current) {
+      try {
+        webAudioSourceRef.current.onended = null;
+        webAudioSourceRef.current.stop();
+        webAudioSourceRef.current.disconnect();
+      } catch {
+        // Ignore if already stopped
+      }
+      webAudioSourceRef.current = null;
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
+    let createdObjectUrl: string | null = null;
+
     (async () => {
       try {
-        const res = await fetch(`/api/keepsakes?id=${encodeURIComponent(id)}`);
+        const res = await fetch(`/api/keepsakes?id=${encodeURIComponent(id)}`, {
+          cache: "no-store",
+        });
         if (res.ok) {
           const data: KeepsakeRecord = await res.json();
           if (cancelled) return;
+          if (!data.photoDataUrl) {
+            data.photoDataUrl = "/sample-postcard-photo.svg";
+          }
           setRecord(data);
 
+          let loadedBlob: Blob | null = null;
+
           if (data.audioUrl) {
-            setPlayableUrl(data.audioUrl);
-          } else {
+            // Preload audio into local in-memory Blob (same reliable playback mechanism as Step 03)
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const audioRes = await fetch(data.audioUrl);
+                if (audioRes.ok) {
+                  const ab = await audioRes.arrayBuffer();
+                  if (ab.byteLength > 44) {
+                    audioBytesRef.current = ab;
+                    loadedBlob = new Blob([ab], { type: "audio/wav" });
+                    break;
+                  }
+                }
+              } catch {
+                // Retry once or twice in case KV edge replication is still settling
+              }
+              if (attempt < 2) {
+                await new Promise((r) => setTimeout(r, 450));
+              }
+            }
+          }
+
+          if (!loadedBlob) {
             const vBuf = await createFallbackVoiceBuffer();
             const bBuf = await synthesizeOfflineBackingBuffer(
               data.presetId || "warm-guitar-piano",
@@ -92,9 +144,13 @@ export default function ListenShiTownPostcardPage() {
               bgmGain: 0.34,
               duckingDepthDb: 9,
             });
-            if (!cancelled) {
-              setPlayableUrl(URL.createObjectURL(mixed.wavBlob));
-            }
+            loadedBlob = mixed.wavBlob;
+            audioBytesRef.current = await mixed.wavBlob.arrayBuffer();
+          }
+
+          if (!cancelled && loadedBlob) {
+            createdObjectUrl = URL.createObjectURL(loadedBlob);
+            setPlayableUrl(createdObjectUrl);
           }
         }
       } finally {
@@ -104,34 +160,105 @@ export default function ListenShiTownPostcardPage() {
 
     return () => {
       cancelled = true;
+      stopWebAudioFallback();
+      if (createdObjectUrl) {
+        URL.revokeObjectURL(createdObjectUrl);
+      }
     };
   }, [id]);
 
-  const togglePlay = () => {
-    if (!playableUrl) return;
-    if (!audioRef.current) {
-      const audio = new Audio(playableUrl);
-      audioRef.current = audio;
-      audio.ontimeupdate = () => {
-        setCurrentTimeSec(audio.currentTime);
-        if (audio.duration > 0) {
-          setProgressPct((audio.currentTime / audio.duration) * 100);
+  const startWebAudioFallback = async (): Promise<boolean> => {
+    const rawBytes = audioBytesRef.current;
+    if (!rawBytes) return false;
+    try {
+      stopWebAudioFallback();
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      if (!webAudioCtxRef.current || webAudioCtxRef.current.state === "closed") {
+        webAudioCtxRef.current = new Ctx();
+      }
+      const ctx = webAudioCtxRef.current;
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+      const decoded = await ctx.decodeAudioData(rawBytes.slice(0));
+      const source = ctx.createBufferSource();
+      source.buffer = decoded;
+      source.connect(ctx.destination);
+
+      const startTime = ctx.currentTime;
+      const totalDur = decoded.duration || record?.durationSeconds || 14;
+
+      const tick = () => {
+        const elapsed = Math.min(totalDur, ctx.currentTime - startTime);
+        setCurrentTimeSec(elapsed);
+        setProgressPct(totalDur > 0 ? Math.min(100, (elapsed / totalDur) * 100) : 0);
+        if (elapsed < totalDur) {
+          webAudioRafRef.current = requestAnimationFrame(tick);
         }
       };
-      audio.onended = () => {
+
+      source.onended = () => {
+        stopWebAudioFallback();
         setIsPlaying(false);
         setProgressPct(0);
         setCurrentTimeSec(0);
       };
+
+      webAudioSourceRef.current = source;
+      source.start(0);
+      setIsPlaying(true);
+      webAudioRafRef.current = requestAnimationFrame(tick);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const togglePlay = async () => {
+    if (!playableUrl) return;
+
+    // Configure iOS 17+ audioSession to "playback" so sound plays even if hardware mute switch is on
+    try {
+      const nav = navigator as Navigator & {
+        audioSession?: { type: string };
+      };
+      if (nav.audioSession) {
+        nav.audioSession.type = "playback";
+      }
+    } catch {
+      // Ignore on browsers without audioSession API
     }
 
     if (isPlaying) {
-      audioRef.current.pause();
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      stopWebAudioFallback();
       setIsPlaying(false);
-    } else {
-      audioRef.current.play().catch(() => {});
-      setIsPlaying(true);
+      return;
     }
+
+    const audio = audioRef.current;
+    if (audio) {
+      try {
+        audio.muted = false;
+        audio.volume = 1.0;
+        if (audio.src !== playableUrl) {
+          audio.src = playableUrl;
+          audio.load();
+        }
+        await audio.play();
+        setIsPlaying(true);
+        return;
+      } catch {
+        // Fallback to Web Audio API below if HTMLAudioElement playback is blocked or unsupported
+      }
+    }
+
+    await startWebAudioFallback();
   };
 
   const formatTime = (sec: number) => {
@@ -182,6 +309,18 @@ export default function ListenShiTownPostcardPage() {
             <span>配樂：{record.presetTitle}</span>
             <span className="tabular-nums">#{record.id.toUpperCase()}</span>
           </div>
+
+          {record.photoDataUrl && (
+            <figure className="listen-photo-frame">
+              <div className="listen-photo-stage">
+                <img
+                  src={record.photoDataUrl}
+                  alt="聲音明信片紀念照片"
+                  className="listen-photo-img"
+                />
+              </div>
+            </figure>
+          )}
 
           {/* Soundwave Line */}
           <div
@@ -243,10 +382,37 @@ export default function ListenShiTownPostcardPage() {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <audio
+              ref={audioRef}
+              src={playableUrl || undefined}
+              preload="auto"
+              playsInline
+              style={{ display: "none" }}
+              onTimeUpdate={(e) => {
+                const el = e.currentTarget;
+                setCurrentTimeSec(el.currentTime);
+                const totalDur =
+                  Number.isFinite(el.duration) && el.duration > 0
+                    ? el.duration
+                    : record.durationSeconds || 14;
+                if (totalDur > 0) {
+                  setProgressPct(
+                    Math.min(100, (el.currentTime / totalDur) * 100)
+                  );
+                }
+              }}
+              onEnded={() => {
+                setIsPlaying(false);
+                setProgressPct(0);
+                setCurrentTimeSec(0);
+              }}
+            />
+
             <button
               type="button"
               className="btn-primary"
               onClick={togglePlay}
+              disabled={!playableUrl}
               style={{ width: "100%", padding: "13px 20px" }}
             >
               {isPlaying ? (

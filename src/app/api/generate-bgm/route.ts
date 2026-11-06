@@ -13,6 +13,9 @@ export async function POST(req: NextRequest) {
       falModel = "fal-ai/stable-audio",
       referenceAudioDataUrl,
       referenceStrength = 0.75,
+      referenceMode = "style",
+      extendBeforeSeconds = 0,
+      extendAfterSeconds = 0,
     } = body as {
       provider?: "elevenlabs" | "fal";
       prompt: string;
@@ -23,6 +26,9 @@ export async function POST(req: NextRequest) {
       falModel?: string;
       referenceAudioDataUrl?: string;
       referenceStrength?: number;
+      referenceMode?: "style" | "extend-after" | "extend-both" | "extend-before";
+      extendBeforeSeconds?: number;
+      extendAfterSeconds?: number;
     };
 
     if (!prompt || !prompt.trim()) {
@@ -136,11 +142,95 @@ export async function POST(req: NextRequest) {
         Math.min(45, Math.round(durationSeconds + 4))
       );
 
-      // Approach B: If user uploaded a reference audio clip, run Stable Audio 2.5 Audio-to-Audio first!
+      // Approach B: If user uploaded a reference audio clip, run Stable Audio 3 Outpainting or Audio-to-Audio!
       if (referenceAudioDataUrl && referenceAudioDataUrl.startsWith("data:audio/")) {
+        const isOutpainting =
+          referenceMode === "extend-after" ||
+          referenceMode === "extend-both" ||
+          referenceMode === "extend-before";
+
+        if (isOutpainting) {
+          try {
+            const safeBefore =
+              referenceMode === "extend-after"
+                ? 0
+                : Math.max(
+                    1,
+                    Math.min(
+                      35,
+                      Math.round(
+                        extendBeforeSeconds > 0
+                          ? extendBeforeSeconds
+                          : referenceMode === "extend-both"
+                          ? safeSeconds * 0.35
+                          : safeSeconds * 0.65
+                      )
+                    )
+                  );
+            const safeAfter =
+              referenceMode === "extend-before"
+                ? 0
+                : Math.max(
+                    1,
+                    Math.min(
+                      35,
+                      Math.round(
+                        extendAfterSeconds > 0
+                          ? extendAfterSeconds
+                          : referenceMode === "extend-both"
+                          ? safeSeconds * 0.35
+                          : safeSeconds * 0.65
+                      )
+                    )
+                  );
+
+            const outpaintRes = await fetch(
+              "https://fal.run/fal-ai/stable-audio-3/medium/audio-outpainting",
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Key ${apiKey}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  prompt,
+                  audio_url: referenceAudioDataUrl,
+                  extend_seconds_before: safeBefore,
+                  extend_seconds_after: safeAfter,
+                }),
+              }
+            );
+
+            if (outpaintRes.ok) {
+              const outpaintData = await outpaintRes.json();
+              const outpaintUrl =
+                outpaintData?.audio?.url ||
+                outpaintData?.audio_file?.url ||
+                outpaintData?.audio_url ||
+                null;
+              if (outpaintUrl) {
+                const audioFetch = await fetch(outpaintUrl);
+                if (audioFetch.ok) {
+                  const audioBuffer = await audioFetch.arrayBuffer();
+                  return new NextResponse(audioBuffer, {
+                    status: 200,
+                    headers: {
+                      "Content-Type":
+                        audioFetch.headers.get("content-type") || "audio/mpeg",
+                      "X-Generator-Provider": `fal:fal-ai/stable-audio-3/medium/audio-outpainting(${referenceMode})`,
+                    },
+                  });
+                }
+              }
+            }
+          } catch {
+            // Fall through to audio-to-audio or text-to-audio below if outpainting times out
+          }
+        }
+
         try {
           const a2aRes = await fetch(
-            "https://fal.run/fal-ai/stable-audio-25/audio-to-audio",
+            "https://fal.run/fal-ai/stable-audio-3/medium/audio-to-audio",
             {
               method: "POST",
               headers: {
@@ -151,7 +241,6 @@ export async function POST(req: NextRequest) {
                 prompt,
                 audio_url: referenceAudioDataUrl,
                 strength: referenceStrength,
-                total_seconds: safeSeconds,
               }),
             }
           );
@@ -171,9 +260,9 @@ export async function POST(req: NextRequest) {
                   status: 200,
                   headers: {
                     "Content-Type":
-                      audioFetch.headers.get("content-type") || "audio/wav",
+                      audioFetch.headers.get("content-type") || "audio/mpeg",
                     "X-Generator-Provider":
-                      "fal:fal-ai/stable-audio-25/audio-to-audio",
+                      "fal:fal-ai/stable-audio-3/medium/audio-to-audio",
                   },
                 });
               }

@@ -366,16 +366,69 @@ textarea {
 }
 
 /* Step 01: Optional Reference Music Upload Row (Hairline divider, zero nested card box) */
-.reference-upload-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+.reference-upload-section {
   padding: 14px 0;
   margin-top: 0;
   margin-bottom: 16px;
   border-top: 1px solid var(--border-light);
   border-bottom: 1px solid var(--border-light);
+}
+
+.reference-upload-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.reference-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 520px) {
+  .reference-mode-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.reference-mode-chip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  background-color: var(--bg-paper);
+  color: var(--ink-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.reference-mode-chip:hover {
+  background-color: #EFE6D6;
+}
+
+.reference-mode-chip.selected {
+  background-color: var(--bg-sand);
+  border-color: var(--accent-coffee);
+}
+
+.reference-mode-chip-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--ink-primary);
+  line-height: 1.3;
+}
+
+.reference-mode-chip-desc {
+  font-size: 0.76rem;
+  color: var(--ink-secondary);
+  line-height: 1.35;
+  margin-top: 2px;
 }
 
 .reference-upload-info {
@@ -490,8 +543,67 @@ textarea {
   padding: 14px 0;
   border-top: 1px solid var(--border-light);
   border-bottom: 1px solid var(--border-light);
-  margin-bottom: 18px;
+  margin-bottom: 0;
   flex-wrap: nowrap;
+}
+
+/* Step 03: Optional Photo Upload Row */
+.photo-upload-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 18px;
+}
+
+.photo-upload-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.photo-thumb-preview {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 5px;
+  border: 1px solid var(--border-medium);
+  background-color: #FFFFFF;
+  flex-shrink: 0;
+  display: block;
+}
+
+/* Listen Page: Passepartout Keepsake Photo Frame */
+.listen-photo-frame {
+  margin: 0 0 18px;
+  padding: 7px;
+  background-color: #FFFFFF;
+  border: 1px solid var(--border-medium);
+  border-radius: 6px;
+}
+
+.listen-photo-stage {
+  width: 100%;
+  background-color: var(--bg-paper);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.listen-photo-img {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 3px;
 }
 
 .player-toggle-btn {
@@ -634,10 +746,15 @@ textarea {
     flex: 1;
   }
 
-  .reference-upload-row {
+  .reference-upload-row,
+  .photo-upload-row {
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
+  }
+
+  .listen-photo-img {
+    max-height: 300px;
   }
 
   .script-helper-sub {

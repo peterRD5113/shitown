@@ -12,6 +12,7 @@ export interface KeepsakeRecord {
   durationSeconds: number;
   createdAt: string;
   audioUrl: string | null;
+  photoDataUrl?: string | null;
 }
 
 interface KvNamespaceLike {
@@ -35,6 +36,7 @@ const DEFAULT_SAMPLE_RECORD: KeepsakeRecord = {
   durationSeconds: 14,
   createdAt: "2026.11.05",
   audioUrl: null,
+  photoDataUrl: "/sample-postcard-photo.svg",
 };
 
 declare global {
@@ -153,6 +155,14 @@ export async function POST(req: NextRequest) {
       (formData.get("presetTitle") as string | null)?.trim() ||
       "老屋午後暖陽與木吉他";
     const durationSeconds = Number(formData.get("durationSeconds") || 14);
+    const rawPhotoDataUrl =
+      (formData.get("photoDataUrl") as string | null)?.trim() || null;
+    const photoDataUrl =
+      rawPhotoDataUrl &&
+      (rawPhotoDataUrl.startsWith("data:image/") ||
+        rawPhotoDataUrl.startsWith("/"))
+        ? rawPhotoDataUrl
+        : "/sample-postcard-photo.svg";
 
     const shortCode = Math.random().toString(36).substring(2, 7);
     const id = `shitown-${shortCode}`;
@@ -206,6 +216,7 @@ export async function POST(req: NextRequest) {
       durationSeconds: Math.round(durationSeconds),
       createdAt,
       audioUrl,
+      photoDataUrl,
     };
 
     getMemoryRecords()[id] = record;

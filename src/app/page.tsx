@@ -14,15 +14,45 @@ import {
   ArrowRight,
   ChevronDown,
   Music,
+  Image as ImageIcon,
   X,
   RefreshCw,
 } from "lucide-react";
 import { synthesizeOfflineBackingBuffer } from "@/lib/presets";
-import { renderAutoDuckedMix, audioBufferToWavBlob } from "@/lib/audio-mixer";
 import {
-  downloadStandaloneQrPng,
-  downloadVinylSleeveCardPng,
-} from "@/lib/export-card-png";
+  renderAutoDuckedMix,
+  audioBufferToWavBlob,
+  composeReferencePlacementBuffer,
+  type ReferencePlacementMode,
+} from "@/lib/audio-mixer";
+import { downloadStandaloneQrPng } from "@/lib/export-card-png";
+
+const REFERENCE_MODE_OPTIONS: {
+  id: ReferencePlacementMode;
+  title: string;
+  desc: string;
+}[] = [
+  {
+    id: "style",
+    title: "風格參考（重譜全曲）",
+    desc: "依上傳音檔的曲風與音色，重新譜寫整段配樂",
+  },
+  {
+    id: "extend-after",
+    title: "放在開頭・往後延伸",
+    desc: "開頭播放上傳原音，接著順著旋律往後擴展",
+  },
+  {
+    id: "extend-both",
+    title: "放在中段・前後延伸",
+    desc: "原音放在中段，前後雙向自然鋪墊與延伸",
+  },
+  {
+    id: "extend-before",
+    title: "放在結尾・往前鋪墊",
+    desc: "前段柔和鋪墊，說話結束後接回上傳原音收尾",
+  },
+];
 
 interface RecommendedBgmTrack {
   id: string;
@@ -99,6 +129,47 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+function compressImageFileToDataUrl(
+  file: File,
+  maxDimension = 1200,
+  quality = 0.82
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { width, height } = img;
+      if (width > maxDimension || height > maxDimension) {
+        if (width >= height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas context unavailable"));
+        return;
+      }
+      ctx.fillStyle = "#FBF8F3";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Image load failed"));
+    };
+    img.src = objectUrl;
+  });
+}
+
 export default function ShiTownVoicePostcardPage() {
   // Currently open accordion panel (any step 1..4 can be freely opened at any time!)
   const [openStep, setOpenStep] = useState<1 | 2 | 3 | 4 | null>(1);
@@ -129,8 +200,12 @@ export default function ShiTownVoicePostcardPage() {
 
   // Step 01 (Optional): Uploaded Reference Music for Approach A + B
   const [referenceFileName, setReferenceFileName] = useState<string>("");
+  const [referenceRawBuffer, setReferenceRawBuffer] =
+    useState<AudioBuffer | null>(null);
   const [referenceClipBlob, setReferenceClipBlob] = useState<Blob | null>(null);
   const [referenceDataUrl, setReferenceDataUrl] = useState<string>("");
+  const [referenceMode, setReferenceMode] =
+    useState<ReferencePlacementMode>("style");
   const [isPlayingReference, setIsPlayingReference] = useState(false);
 
   // Step 02: AI BGM Recommendations (Pick 1 of 2)
@@ -146,16 +221,17 @@ export default function ShiTownVoicePostcardPage() {
   const [mixedBgmId, setMixedBgmId] = useState<string>("bgm-a");
   const [playingBgmId, setPlayingBgmId] = useState<string | null>(null);
 
-  // Step 03: Auto-Mixed Voice Postcard Audio
+  // Step 03: Auto-Mixed Voice Postcard Audio & Optional Keepsake Photo
   const [isMixing, setIsMixing] = useState(false);
   const [mixedWavBlob, setMixedWavBlob] = useState<Blob | null>(null);
   const [mixedDuration, setMixedDuration] = useState<number>(14);
   const [isPlayingMix, setIsPlayingMix] = useState(false);
+  const [photoFileName, setPhotoFileName] = useState<string>("");
+  const [photoDataUrl, setPhotoDataUrl] = useState<string>("");
 
   // Step 04: QR Code Generation & Download
   const [isGeneratingQr, setIsGeneratingQr] = useState(false);
   const [keepsakeId, setKeepsakeId] = useState<string>("shitown-001");
-  const [createdAtDate, setCreatedAtDate] = useState<string>("2026.11.05");
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [listenUrl, setListenUrl] = useState<string>("");
 
@@ -167,6 +243,7 @@ export default function ShiTownVoicePostcardPage() {
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const activeAudioElRef = useRef<HTMLAudioElement | null>(null);
   const refAudioInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const scriptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Auto-expand teleprompter textarea height so it never shows a vertical scrollbar
@@ -194,7 +271,11 @@ export default function ShiTownVoicePostcardPage() {
           setHasRecordedCustomVoice(true);
           setHasSubmittedVoice(true);
         }
-        if (parsedStep >= 3) setHasMixedAudio(true);
+        if (parsedStep >= 3) {
+          setHasMixedAudio(true);
+          setPhotoFileName("harbor-afternoon.jpg");
+          setPhotoDataUrl("/sample-postcard-photo.svg");
+        }
         if (parsedStep >= 4) setHasGeneratedQr(true);
       }
     } catch {
@@ -343,6 +424,7 @@ export default function ShiTownVoicePostcardPage() {
       const clipDataUrl = await blobToDataUrl(clipWavBlob);
 
       setReferenceFileName(file.name);
+      setReferenceRawBuffer(decoded);
       setReferenceClipBlob(clipWavBlob);
       setReferenceDataUrl(clipDataUrl);
     } catch {
@@ -355,8 +437,10 @@ export default function ShiTownVoicePostcardPage() {
   const handleClearReferenceAudio = () => {
     if (isPlayingReference) stopAnyPlayback();
     setReferenceFileName("");
+    setReferenceRawBuffer(null);
     setReferenceClipBlob(null);
     setReferenceDataUrl("");
+    setReferenceMode("style");
   };
 
   // STEP 01: Start / Stop Microphone Recording
@@ -492,15 +576,59 @@ export default function ShiTownVoicePostcardPage() {
         // Fallback to default 2 recommendations if analysis fails
       }
 
-      // Stage 2 (Approach B): Generate the 2 BGM tracks via Fal.ai (with Audio-to-Audio reference conditioning when referenceDataUrl is present)
+      // Stage 2 (Approach B): Generate the 2 BGM tracks via Fal.ai (with Audio-to-Audio or Outpainting when referenceDataUrl is present)
       setAiStageMessage(
         referenceDataUrl
-          ? "2/2 正在依參考音樂與語調生成兩首配樂..."
+          ? referenceMode === "extend-after"
+            ? "2/2 正在保留開頭原音並往後延伸兩首配樂..."
+            : referenceMode === "extend-both"
+            ? "2/2 正在將原音置於中段並前後延伸兩首配樂..."
+            : referenceMode === "extend-before"
+            ? "2/2 正在往前鋪墊並銜接結尾原音..."
+            : "2/2 正在依參考音樂與語調生成兩首配樂..."
           : "2/2 正在為您譜寫兩首專屬背景音樂..."
       );
       const targetLen = Math.max(14, voiceDuration + 4);
       const newBuffers: Record<string, AudioBuffer> = {};
       const newBlobs: Record<string, Blob> = {};
+
+      // Prepare appropriately sized reference clip & extension durations when reference audio is present
+      let activeRefDataUrl = referenceDataUrl;
+      let extendBeforeSeconds = 0;
+      let extendAfterSeconds = 0;
+
+      if (referenceRawBuffer && referenceMode !== "style") {
+        // Keep the original clip to at most ~42% of targetLen (or up to 8s) so there is plenty of room to extend before/after
+        const maxSegmentSec = Math.min(
+          referenceRawBuffer.duration,
+          Math.max(4, Math.min(8, Math.floor(targetLen * 0.42)))
+        );
+        const startOffsetSec =
+          referenceRawBuffer.duration > 20
+            ? Math.min(8, referenceRawBuffer.duration * 0.1)
+            : 0;
+        const targetSr = 22050;
+        const segFrames = Math.max(1, Math.ceil(maxSegmentSec * targetSr));
+        const segCtx = new OfflineAudioContext(1, segFrames, targetSr);
+        const segSrc = segCtx.createBufferSource();
+        segSrc.buffer = referenceRawBuffer;
+        segSrc.connect(segCtx.destination);
+        segSrc.start(0, startOffsetSec, maxSegmentSec);
+        const renderedSeg = await segCtx.startRendering();
+        activeRefDataUrl = await blobToDataUrl(audioBufferToWavBlob(renderedSeg));
+
+        const remainSec = Math.max(4, Math.round(targetLen - maxSegmentSec));
+        if (referenceMode === "extend-after") {
+          extendBeforeSeconds = 0;
+          extendAfterSeconds = remainSec;
+        } else if (referenceMode === "extend-both") {
+          extendBeforeSeconds = Math.max(2, Math.floor(remainSec / 2));
+          extendAfterSeconds = Math.max(2, Math.ceil(remainSec / 2));
+        } else if (referenceMode === "extend-before") {
+          extendBeforeSeconds = remainSec;
+          extendAfterSeconds = 0;
+        }
+      }
 
       for (let idx = 0; idx < activeRecommendations.length; idx++) {
         const rec = activeRecommendations[idx];
@@ -514,8 +642,11 @@ export default function ShiTownVoicePostcardPage() {
               mode: rec.mode,
               durationSeconds: targetLen,
               falModel: "fal-ai/stable-audio",
-              referenceAudioDataUrl: referenceDataUrl || undefined,
+              referenceAudioDataUrl: activeRefDataUrl || undefined,
               referenceStrength: idx === 0 ? 0.72 : 0.82,
+              referenceMode,
+              extendBeforeSeconds,
+              extendAfterSeconds,
             }),
           });
           if (res.ok) {
@@ -532,8 +663,17 @@ export default function ShiTownVoicePostcardPage() {
           rec.presetId || "warm-guitar-piano",
           targetLen
         );
-        newBuffers[rec.id] = synthBuf;
-        newBlobs[rec.id] = audioBufferToWavBlob(synthBuf);
+        const finalFallbackBuf =
+          referenceRawBuffer && referenceMode !== "style"
+            ? await composeReferencePlacementBuffer(
+                referenceRawBuffer,
+                synthBuf,
+                referenceMode,
+                targetLen
+              )
+            : synthBuf;
+        newBuffers[rec.id] = finalFallbackBuf;
+        newBlobs[rec.id] = audioBufferToWavBlob(finalFallbackBuf);
       }
 
       setBgmBuffers(newBuffers);
@@ -567,11 +707,35 @@ export default function ShiTownVoicePostcardPage() {
       setMixedDuration(Math.round(result.durationSeconds));
       setMixedBgmId(selectedBgmId);
       setHasMixedAudio(true);
+      setHasGeneratedQr(false);
       setOpenStep(3);
     } finally {
       setIsMixing(false);
     }
   }, [voiceBuffer, bgmBuffers, selectedBgmId]);
+
+  // STEP 03: Optional Keepsake Photo Upload
+  const handlePhotoFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setErrorMessage(null);
+    try {
+      const compressedDataUrl = await compressImageFileToDataUrl(file, 1200, 0.82);
+      setPhotoFileName(file.name);
+      setPhotoDataUrl(compressedDataUrl);
+    } catch {
+      setErrorMessage("無法讀取這張照片，請確認檔案為 JPG、PNG 或 WebP 格式。");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const handleClearPhoto = () => {
+    setPhotoFileName("");
+    setPhotoDataUrl("");
+  };
 
   // STEP 03 -> STEP 04: Confirm Mix & Generate QR Code
   const handleConfirmStep3 = async () => {
@@ -598,6 +762,9 @@ export default function ShiTownVoicePostcardPage() {
       formData.append("presetId", chosenTrack.presetId);
       formData.append("presetTitle", chosenTrack.title);
       formData.append("durationSeconds", String(mixedDuration));
+      if (photoDataUrl) {
+        formData.append("photoDataUrl", photoDataUrl);
+      }
 
       const res = await fetch("/api/keepsakes", {
         method: "POST",
@@ -608,8 +775,24 @@ export default function ShiTownVoicePostcardPage() {
         throw new Error(record.error || "生成 QR Code 失敗");
       }
 
+      const origin =
+        typeof window !== "undefined"
+          ? window.location.origin
+          : "http://localhost:3000";
+      const nextUrl = `${origin}/listen/${record.id}`;
+      const nextQrDataUrl = await QRCode.toDataURL(nextUrl, {
+        width: 240,
+        margin: 1,
+        color: {
+          dark: "#3A2314",
+          light: "#FFFFFF",
+        },
+        errorCorrectionLevel: "M",
+      });
+
       setKeepsakeId(record.id);
-      setCreatedAtDate(record.createdAt);
+      setListenUrl(nextUrl);
+      setQrDataUrl(nextQrDataUrl);
       setHasGeneratedQr(true);
       setOpenStep(4);
     } catch (err) {
@@ -786,86 +969,128 @@ export default function ShiTownVoicePostcardPage() {
                 />
               </div>
 
-              {/* Optional Reference Music Upload Row (Approach A + B) */}
-              <div className="reference-upload-row">
-                <div className="reference-upload-info">
-                  <div className="reference-upload-title">
-                    參考音樂（選填）
+              {/* Optional Reference Music Upload Section (Approach A + B + Outpainting) */}
+              <div className="reference-upload-section">
+                <div className="reference-upload-row">
+                  <div className="reference-upload-info">
+                    <div className="reference-upload-title">
+                      參考音樂（選填）
+                    </div>
+                    <div className="reference-upload-desc">
+                      {referenceFileName
+                        ? `已載入：${referenceFileName}（可於下方選擇如何使用這段音檔）`
+                        : "若有喜歡的音樂可上傳，可選擇依曲風重譜，或將原音放在開頭／中段／結尾延伸"}
+                    </div>
                   </div>
-                  <div className="reference-upload-desc">
-                    {referenceFileName
-                      ? `已載入：${referenceFileName}（將依此曲風與音色生成配樂）`
-                      : "若有喜歡的音樂可上傳，系統將依該曲風與音色為您生成相似配樂"}
-                  </div>
-                </div>
 
-                <div className="reference-upload-actions">
-                  <input
-                    ref={refAudioInputRef}
-                    type="file"
-                    accept="audio/*"
-                    onChange={handleReferenceFileChange}
-                    style={{ display: "none" }}
-                  />
+                  <div className="reference-upload-actions">
+                    <input
+                      ref={refAudioInputRef}
+                      type="file"
+                      accept="audio/*"
+                      onChange={handleReferenceFileChange}
+                      style={{ display: "none" }}
+                    />
 
-                  {!referenceClipBlob ? (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => refAudioInputRef.current?.click()}
-                    >
-                      <Music size={15} strokeWidth={1.75} />
-                      <span>上傳參考音檔</span>
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() =>
-                          isPlayingReference
-                            ? stopAnyPlayback()
-                            : playBlob(
-                                referenceClipBlob,
-                                () => setIsPlayingReference(true),
-                                () => setIsPlayingReference(false)
-                              )
-                        }
-                      >
-                        {isPlayingReference ? (
-                          <>
-                            <Pause size={14} strokeWidth={1.75} />
-                            <span>停止</span>
-                          </>
-                        ) : (
-                          <>
-                            <Play size={14} strokeWidth={1.75} />
-                            <span>試聽參考</span>
-                          </>
-                        )}
-                      </button>
-
+                    {!referenceClipBlob ? (
                       <button
                         type="button"
                         className="btn-secondary"
                         onClick={() => refAudioInputRef.current?.click()}
                       >
-                        <Music size={14} strokeWidth={1.75} />
-                        <span>更換</span>
+                        <Music size={15} strokeWidth={1.75} />
+                        <span>上傳參考音檔</span>
                       </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() =>
+                            isPlayingReference
+                              ? stopAnyPlayback()
+                              : playBlob(
+                                  referenceClipBlob,
+                                  () => setIsPlayingReference(true),
+                                  () => setIsPlayingReference(false)
+                                )
+                          }
+                        >
+                          {isPlayingReference ? (
+                            <>
+                              <Pause size={14} strokeWidth={1.75} />
+                              <span>停止</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play size={14} strokeWidth={1.75} />
+                              <span>試聽參考</span>
+                            </>
+                          )}
+                        </button>
 
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={handleClearReferenceAudio}
-                        aria-label="移除參考音檔"
-                      >
-                        <X size={14} strokeWidth={1.75} />
-                        <span>移除</span>
-                      </button>
-                    </>
-                  )}
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => refAudioInputRef.current?.click()}
+                        >
+                          <Music size={14} strokeWidth={1.75} />
+                          <span>更換</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={handleClearReferenceAudio}
+                          aria-label="移除參考音檔"
+                        >
+                          <X size={14} strokeWidth={1.75} />
+                          <span>移除</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
+
+                {referenceClipBlob && (
+                  <div
+                    className="reference-mode-grid"
+                    role="radiogroup"
+                    aria-label="參考音檔使用方式"
+                  >
+                    {REFERENCE_MODE_OPTIONS.map((opt) => {
+                      const isSelected = referenceMode === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={isSelected}
+                          className={`reference-mode-chip ${
+                            isSelected ? "selected" : ""
+                          }`}
+                          onClick={() => setReferenceMode(opt.id)}
+                        >
+                          <span
+                            className="radio-dot"
+                            aria-hidden="true"
+                            style={{ marginTop: "2px" }}
+                          >
+                            {isSelected && <span className="radio-dot-inner" />}
+                          </span>
+                          <div>
+                            <div className="reference-mode-chip-title">
+                              {opt.title}
+                            </div>
+                            <div className="reference-mode-chip-desc">
+                              {opt.desc}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="step-action-row">
@@ -1213,6 +1438,71 @@ export default function ShiTownVoicePostcardPage() {
                     </span>
                   </div>
 
+                  {/* Step 03 Optional Keepsake Photo Upload Row */}
+                  <div className="photo-upload-row">
+                    <div className="photo-upload-left">
+                      {photoDataUrl && (
+                        <img
+                          src={photoDataUrl}
+                          alt="紀念照片預覽"
+                          className="photo-thumb-preview"
+                        />
+                      )}
+                      <div className="reference-upload-info">
+                        <div className="reference-upload-title">
+                          紀念照片（選填）
+                        </div>
+                        <div className="reference-upload-desc">
+                          {photoFileName
+                            ? `已載入：${photoFileName}（掃碼收聽時將隨聲音一同呈現）`
+                            : "上傳一張照片，掃碼收聽時將隨聲音一同呈現"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="reference-upload-actions">
+                      <input
+                        ref={photoInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoFileChange}
+                        style={{ display: "none" }}
+                      />
+
+                      {!photoDataUrl ? (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => photoInputRef.current?.click()}
+                        >
+                          <ImageIcon size={15} strokeWidth={1.75} />
+                          <span>上傳照片</span>
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => photoInputRef.current?.click()}
+                          >
+                            <ImageIcon size={14} strokeWidth={1.75} />
+                            <span>更換</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={handleClearPhoto}
+                            aria-label="移除照片"
+                          >
+                            <X size={14} strokeWidth={1.75} />
+                            <span>移除</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="step-action-row">
                     <button
                       type="button"
@@ -1345,23 +1635,6 @@ export default function ShiTownVoicePostcardPage() {
                       >
                         <Download size={16} strokeWidth={1.75} />
                         <span>下載 QR Code (.PNG)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() =>
-                          downloadVinylSleeveCardPng({
-                            id: keepsakeId,
-                            bgmTitle: mixedBgmTrack.title,
-                            durationSeconds: mixedDuration,
-                            createdAt: createdAtDate,
-                            listenUrl,
-                          })
-                        }
-                      >
-                        <Download size={16} strokeWidth={1.75} />
-                        <span>下載聲音明信片 (.PNG)</span>
                       </button>
 
                       <a
